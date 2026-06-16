@@ -27,6 +27,14 @@ export interface PromptDetail {
   } | null;
 }
 
+// One selectable model in the catalog. `id` (== label) is what runs send back.
+export interface ModelOption {
+  id: string;
+  label: string;
+  model: string;
+  uri: string;
+}
+
 export interface SandboxRunResult {
   text: string;
   tokens_used: number | null;
@@ -68,13 +76,18 @@ export const api = {
   versions: {
     setCurrent: (id: number) =>
       apiFetch<{ ok: boolean }>(`/api/versions/${id}`, { method: 'PATCH', ...json({ set_current: true }) }),
+    updateText: (id: number, text: string) =>
+      apiFetch<{ ok: boolean }>(`/api/versions/${id}`, { method: 'PATCH', ...json({ text }) }),
+    updateName: (id: number, name: string) =>
+      apiFetch<{ ok: boolean }>(`/api/versions/${id}`, { method: 'PATCH', ...json({ name }) }),
     updateNote: (id: number, note: string | null) =>
       apiFetch<{ ok: boolean }>(`/api/versions/${id}`, { method: 'PATCH', ...json({ note }) }),
     delete: (id: number) =>
       apiFetch<{ ok: boolean }>(`/api/versions/${id}`, { method: 'DELETE' }),
   },
   llm: {
-    run: (data: { system_prompt?: string; user_message: string; temperature: number; top_p: number; top_k: number; max_tokens: number; enable_thinking: boolean }) =>
+    models: () => apiFetch<{ models: ModelOption[]; active: string | null }>('/api/llm/models'),
+    run: (data: { system_prompt?: string; user_message: string; model_id?: string; temperature: number; top_p: number; top_k: number; max_tokens: number; enable_thinking: boolean }) =>
       apiFetch<SandboxRunResult>('/api/llm/run', { method: 'POST', ...json(data) }),
   },
 };

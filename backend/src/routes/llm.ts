@@ -1,16 +1,34 @@
-// LLM proxy route. Calls the llama.cpp OpenAI-compatible endpoint and returns a
-// normalised response. Keeping this on the backend means the frontend never touches
-// ACTIVE_MODEL_URI directly — env config stays server-side only.
+// LLM routes. Lists the declared model catalog and proxies chat requests to the
+// right server. Keeping the URLs server-side (in config) means the frontend
+// only ever deals with model ids/labels, never raw server addresses.
 import { Router } from 'express';
+import { getConfig, resolveModel } from '../config';
 
 const router = Router();
 
 interface ChatMessage { role: 'system' | 'user'; content: string; }
 
+// --- GET /api/llm/models ---
+// Returns the declared model catalog (from backend/config.json) for the Settings
+// model picker. `active` is the default id the UI starts on.
+router.get('/models', (_req, res) => {
+  try {
+    const { models, defaultId } = getConfig();
+    res.json({
+      models: models.map(m => ({ id: m.id, label: m.label, model: m.model, uri: m.uri })),
+      active: defaultId,
+    });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: `Could not read model catalog (backend/config.json): ${msg}` });
+  }
+});
+
 router.post('/run', async (req, res) => {
   const {
     system_prompt,
     user_message,
+    model_id,
     temperature = 0.7,
     top_p = 1.0,
     top_k = 40,
@@ -19,6 +37,7 @@ router.post('/run', async (req, res) => {
   } = req.body as {
     system_prompt?: string;
     user_message: string;
+    model_id?: string;
     temperature?: number;
     top_p?: number;
     top_k?: number;
@@ -26,13 +45,15 @@ router.post('/run', async (req, res) => {
     enable_thinking?: boolean;
   };
 
-  const uri   = process.env.ACTIVE_MODEL_URI;
-  const model = process.env.ACTIVE_MODEL_NAME;
+  // Resolve the UI-chosen model id to its server URL + model name.
+  const entry = resolveModel(model_id);
 
-  if (!uri || !model) {
-    res.status(500).json({ error: 'LLM not configured — check ACTIVE_MODEL_URI and ACTIVE_MODEL_NAME in .env' });
+  if (!entry) {
+    res.status(500).json({ error: 'No model configured — add models to backend/config.json (see config.example.json)' });
     return;
   }
+
+  const { uri, model } = entry;
 
   const messages: ChatMessage[] = [];
   if (system_prompt?.trim()) messages.push({ role: 'system', content: system_prompt });

@@ -10,7 +10,7 @@ import {
 import { useAppState } from '../store/app';
 import { extractVariables } from '../utils/variables';
 
-const { prompts, selectedPromptId } = useAppState();
+const { prompts } = useAppState();
 
 // ── Local editable copies of metadata ─────────────────────────────────────────
 const localName     = ref('');
@@ -28,6 +28,15 @@ watch(activePromptData, data => {
   localName.value        = data.name;
   localDescription.value = data.description ?? '';
 }, { immediate: true });
+
+// ── Dirty state ────────────────────────────────────────────────────────────────
+// True when the editor text differs from the saved text of the selected version.
+const isDirty = computed(() => localText.value !== activeVersionText.value);
+
+// Name of the version the editor is currently bound to (what "Save changes" targets).
+const currentVersionName = computed(() =>
+  versions.value.find(v => v.id === activeVersionId.value)?.name ?? null
+);
 
 // ── Variables ─────────────────────────────────────────────────────────────────
 const detectedVars = computed(() => extractVariables(localText.value));
@@ -62,13 +71,30 @@ async function saveMeta() {
 
 // ── Version history ────────────────────────────────────────────────────────────
 async function selectVersion(versionId: number) {
+  if (versionId === activeVersionId.value) return;
   const v = versions.value.find(v => v.id === versionId);
-  if (v) {
-    activeVersionId.value = versionId;
-    activeVersionText.value = v.text;
-    localText.value = v.text;
-    await api.versions.setCurrent(versionId);
+  if (!v) return;
+  // Guard against silently discarding unsaved edits when switching versions.
+  if (isDirty.value && !confirm('You have unsaved changes that will be lost. Switch version anyway?')) {
+    return;
   }
+  activeVersionId.value = versionId;
+  activeVersionText.value = v.text;
+  localText.value = v.text;
+  await api.versions.setCurrent(versionId);
+}
+
+// Inline name editing
+const editingNameId = ref<number | null>(null);
+const nameBuffer    = ref('');
+
+async function saveVersionName(versionId: number) {
+  const name = nameBuffer.value.trim();
+  const v = versions.value.find(v => v.id === versionId);
+  editingNameId.value = null;
+  if (!v || !name || name === v.name) return;
+  await api.versions.updateName(versionId, name);
+  v.name = name;
 }
 
 // Inline note editing
@@ -82,33 +108,43 @@ async function saveNote(versionId: number) {
   editingNoteId.value = null;
 }
 
-// ── Delete actions ─────────────────────────────────────────────────────────────
-async function deleteVersion() {
-  if (!activeVersionId.value) return;
-  if (!confirm('Delete this version? This cannot be undone.')) return;
+// ── Save changes to the current version (in place) ────────────────────────────
+const savingChanges = ref(false);
+
+async function saveChanges() {
+  if (!activeVersionId.value || savingChanges.value) return;
+  savingChanges.value = true;
   try {
-    await api.versions.delete(activeVersionId.value);
+    await api.versions.updateText(activeVersionId.value, localText.value);
+    activeVersionText.value = localText.value;
+    // Keep the in-memory version list in sync so other views see the new text
+    const v = versions.value.find(v => v.id === activeVersionId.value);
+    if (v) v.text = localText.value;
+  } catch (e: unknown) {
+    alert(e instanceof Error ? e.message : 'Could not save changes');
+  } finally {
+    savingChanges.value = false;
+  }
+}
+
+// ── Delete a version ─────────────────────────────────────────────────────────
+async function deleteVersion(versionId: number, name: string) {
+  if (!confirm(`Delete version "${name}"? This cannot be undone.`)) return;
+  try {
+    await api.versions.delete(versionId);
     versions.value = await api.prompts.versions(activePromptData.value!.id);
-    // Switch to whatever version is now current
-    const cur = versions.value.find(v => v.is_current);
-    if (cur) {
-      activeVersionId.value = cur.id;
-      activeVersionText.value = cur.text;
-      localText.value = cur.text;
+    // If the deleted version was active, switch to whatever version is now current
+    if (activeVersionId.value === versionId) {
+      const cur = versions.value.find(v => v.is_current) ?? versions.value[0];
+      if (cur) {
+        activeVersionId.value = cur.id;
+        activeVersionText.value = cur.text;
+        localText.value = cur.text;
+      }
     }
   } catch (e: unknown) {
     alert(e instanceof Error ? e.message : 'Could not delete version');
   }
-}
-
-async function deletePrompt() {
-  if (!activePromptData.value) return;
-  if (!confirm(`Delete "${activePromptData.value.name}" and all its data? This cannot be undone.`)) return;
-  const id = activePromptData.value.id;
-  await api.prompts.delete(id);
-  selectedPromptId.value = null;
-  activePromptData.value = null;
-  prompts.value = await api.prompts.list();
 }
 </script>
 
@@ -131,7 +167,13 @@ async function deletePrompt() {
 
     <!-- Prompt text -->
     <div class="prompt-text-section">
-      <p class="section-label">Prompt text</p>
+      <div class="prompt-text-header">
+        <p class="section-label">Prompt text</p>
+        <span v-if="currentVersionName" class="editing-target">
+          Editing: <strong>{{ currentVersionName }}</strong>
+          <span v-if="isDirty" class="unsaved-dot" title="Unsaved changes">• unsaved</span>
+        </span>
+      </div>
       <textarea v-model="localText" class="prompt-textarea" rows="20" spellcheck="false" />
     </div>
 
@@ -146,7 +188,23 @@ async function deletePrompt() {
           :class="{ current: v.id === activeVersionId }"
           @click="selectVersion(v.id)"
         >
-          <span class="ver-label">{{ v.name }}</span>
+          <span
+            v-if="editingNameId !== v.id"
+            class="ver-label"
+            title="Double-click to rename"
+            @dblclick.stop="editingNameId = v.id; nameBuffer = v.name"
+          >{{ v.name }}</span>
+          <input
+            v-else
+            class="ver-label-input"
+            v-model="nameBuffer"
+            @blur="saveVersionName(v.id)"
+            @keydown.enter="saveVersionName(v.id)"
+            @keydown.escape="editingNameId = null"
+            @click.stop
+            autofocus
+          />
+
 
           <!-- Note: inline editable -->
           <span
@@ -166,17 +224,33 @@ async function deletePrompt() {
             @click.stop
             autofocus
           />
+
+          <!-- Delete this version (disabled when it's the only one) -->
+          <button
+            class="ver-delete"
+            :disabled="versions.length <= 1"
+            :title="versions.length <= 1 ? 'A prompt must keep at least one version' : 'Delete version'"
+            @click.stop="deleteVersion(v.id, v.name)"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="3 6 5 6 21 6" />
+              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+              <path d="M10 11v6M14 11v6" />
+              <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+            </svg>
+          </button>
         </div>
       </div>
     </div>
 
     <!-- Action bar -->
     <div class="action-bar">
-      <button class="btn-action-primary" @click="activeVersionText = localText; showSaveModal = true">Save changes</button>
-      <div class="action-bar-right">
-        <button class="btn-action-danger" @click="deleteVersion">Delete version</button>
-        <button class="btn-action-danger" @click="deletePrompt">Delete prompt</button>
-      </div>
+      <button
+        class="btn-action-primary"
+        :disabled="savingChanges || !activeVersionId || !isDirty"
+        @click="saveChanges"
+      >{{ savingChanges ? 'Saving…' : 'Save changes' }}</button>
+      <button class="btn-action-secondary" @click="activeVersionText = localText; showSaveModal = true">Save as new version</button>
     </div>
   </div>
 </template>
@@ -186,7 +260,7 @@ async function deletePrompt() {
   display: flex;
   flex-direction: column;
   gap: 24px;
-  padding: 32px 36px 48px;
+  padding: 32px 36px 0;
   overflow-y: auto;
   height: 100%;
 }
@@ -231,6 +305,23 @@ async function deletePrompt() {
 /* ── Prompt text ── */
 .prompt-text-section { display: flex; flex-direction: column; gap: 10px; }
 
+.prompt-text-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.editing-target {
+  font-size: 11px;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+.editing-target strong { color: var(--text-secondary); font-weight: 600; }
+
+.unsaved-dot { color: #c79a3a; margin-left: 8px; }
+
 .prompt-textarea {
   width: 100%;
   background: var(--bg);
@@ -253,7 +344,7 @@ async function deletePrompt() {
 
 .version-row {
   display: grid;
-  grid-template-columns: 160px 1fr;
+  grid-template-columns: 160px 1fr auto;
   align-items: center;
   gap: 12px;
   padding: 7px 10px;
@@ -264,8 +355,39 @@ async function deletePrompt() {
 .version-row:hover { background: var(--bg-hover); }
 .version-row.current { background: var(--bg-selected); }
 
+/* Delete button — revealed on row hover */
+.ver-delete {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.1s, color 0.1s;
+}
+.version-row:hover .ver-delete { opacity: 1; }
+.ver-delete:hover:not(:disabled) { color: #c04040; }
+.ver-delete:disabled { opacity: 0.35; cursor: not-allowed; }
+.version-row:hover .ver-delete:disabled { opacity: 0.35; }
+
 .ver-label { font-size: 12px; font-weight: 600; color: var(--text-secondary); font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .version-row.current .ver-label { color: var(--text-white); }
+
+.ver-label-input {
+  background: none;
+  border: none;
+  border-bottom: 1px solid #3a3a3a;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  width: 100%;
+}
+.ver-label-input:focus { outline: none; }
 
 .ver-note { font-size: 12px; color: var(--text-muted); cursor: text; }
 .ver-note-input {
@@ -280,8 +402,20 @@ async function deletePrompt() {
 .ver-note-input:focus { outline: none; }
 
 /* ── Action bar ── */
-.action-bar { display: flex; align-items: center; gap: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
-.action-bar-right { margin-left: auto; display: flex; gap: 8px; }
+/* Sticky to the bottom of the scrolling panel so Save is always reachable.
+   Negative horizontal margins + matching padding let it span the panel's full
+   width; the solid background keeps scrolled content from showing through. */
+.action-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  position: sticky;
+  bottom: 0;
+  margin: 0 -36px;
+  padding: 12px 36px;
+  background: var(--bg);
+  border-top: 1px solid var(--border);
+}
 
 .btn-action-primary {
   padding: 6px 14px;
@@ -294,17 +428,19 @@ async function deletePrompt() {
   font-weight: 500;
   cursor: pointer;
 }
-.btn-action-primary:hover { background: #333; }
+.btn-action-primary:hover:not(:disabled) { background: #333; }
+.btn-action-primary:disabled { opacity: 0.4; cursor: not-allowed; }
 
-.btn-action-danger {
+.btn-action-secondary {
   padding: 6px 14px;
   background: none;
   border: 1px solid var(--border);
   border-radius: 4px;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   font-size: 13px;
   font-family: inherit;
   cursor: pointer;
+  transition: color 0.12s, border-color 0.12s;
 }
-.btn-action-danger:hover { border-color: #f0c0c0; color: #c04040; }
+.btn-action-secondary:hover { color: var(--text-primary); border-color: #aaa; }
 </style>

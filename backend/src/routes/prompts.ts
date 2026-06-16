@@ -1,3 +1,7 @@
+// Prompt collection routes (mounted at /api/prompts):
+//   GET  /  — list every prompt with the name of its current version
+//   POST /  — create a prompt; seeds it with one empty "v1" current version
+// (Single-prompt routes — get/update/delete and versions — live in promptDetail.ts.)
 import { Router } from 'express';
 import db from '../db';
 

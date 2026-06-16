@@ -1,3 +1,11 @@
+// Single-prompt routes (also mounted at /api/prompts):
+//   GET    /:id            — one prompt + its current version
+//   GET    /:id/versions   — all versions of a prompt (newest first)
+//   POST   /:id/versions   — save a new version, making it the current one
+//   PATCH  /:id            — rename / re-describe a prompt
+//   DELETE /:id            — delete a prompt (its versions cascade away)
+// "Current version" is tracked by a single is_current = 1 row per prompt;
+// saving a new version flips the old current off inside one transaction.
 import { Router } from 'express';
 import db from '../db';
 

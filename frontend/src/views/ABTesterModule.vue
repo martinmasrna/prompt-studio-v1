@@ -1,4 +1,12 @@
 <script setup lang="ts">
+// A/B Tester module. Runs two versions of the same prompt side by side under
+// identical settings so they can be compared fairly.
+//
+// Each side picks a version (A / B) from the same prompt's version list. The
+// model config (system prompt, sampling params, thinking) and the variable
+// values are *shared* — only the prompt text differs between the two sides — so
+// any difference in the outputs comes from the wording, not the settings.
+// "Run both" fires the two requests in parallel and renders each result.
 import { ref, computed, watch } from 'vue';
 import { marked } from 'marked';
 import { api } from '../api';
@@ -6,6 +14,7 @@ import type { SandboxRunResult } from '../api';
 import {
   activePromptData, activeVersionId, versions,
 } from '../store/editor';
+import { activeModelId } from '../store/settings';
 import { extractVariables, substituteVariables } from '../utils/variables';
 
 // ── Run state ──────────────────────────────────────────────────────────────────
@@ -78,6 +87,7 @@ async function runBoth() {
 
   const shared = {
     system_prompt:   systemPrompt.value || undefined,
+    model_id:        activeModelId.value ?? undefined,
     temperature:     temperature.value,
     top_p:           topP.value,
     top_k:           topK.value,

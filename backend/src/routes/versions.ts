@@ -1,3 +1,8 @@
+// Single-version routes (mounted at /api/versions):
+//   PATCH  /:id — update a version: set it current, and/or edit its text/name/note
+//   DELETE /:id — delete a version (refuses to delete a prompt's only version)
+// Each PATCH field is independent, so the frontend can update just one thing
+// (e.g. only the note) without resending the rest.
 import { Router } from 'express';
 import db from '../db';
 
@@ -6,7 +11,7 @@ const router = Router();
 // --- PATCH /api/versions/:id ---
 router.patch('/:id', (req, res) => {
   const id = Number(req.params.id);
-  const body = req.body as { note?: string | null; set_current?: boolean };
+  const body = req.body as { note?: string | null; set_current?: boolean; text?: string; name?: string };
 
   if (body.set_current) {
     const version = db.get('SELECT prompt_id FROM versions WHERE id = ?', [id]) as { prompt_id: number } | null;
@@ -25,6 +30,14 @@ router.patch('/:id', (req, res) => {
 
   if ('note' in body) {
     db.run('UPDATE versions SET note = ? WHERE id = ?', [body.note ?? null, id]);
+  }
+
+  if (typeof body.text === 'string') {
+    db.run('UPDATE versions SET text = ? WHERE id = ?', [body.text, id]);
+  }
+
+  if (typeof body.name === 'string' && body.name.trim()) {
+    db.run('UPDATE versions SET name = ? WHERE id = ?', [body.name.trim(), id]);
   }
 
   res.json({ ok: true });

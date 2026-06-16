@@ -6,6 +6,7 @@ import { ref, computed } from 'vue';
 import { marked } from 'marked';
 import { api } from '../api';
 import { activeVersionText, variableValues, sandboxOutput, addSandboxEntry } from '../store/editor';
+import { activeModelId } from '../store/settings';
 import { extractVariables, substituteVariables } from '../utils/variables';
 
 // ── Config state ───────────────────────────────────────────────────────────────
@@ -36,6 +37,7 @@ async function runLLM() {
     const result = await api.llm.run({
       system_prompt: systemPrompt.value || undefined,
       user_message:  userMessage.value,
+      model_id:      activeModelId.value ?? undefined,
       temperature:   temperature.value,
       top_p:         topP.value,
       top_k:         topK.value,

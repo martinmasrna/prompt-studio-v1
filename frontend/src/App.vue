@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Root component. Bootstraps shared data and coordinates top-level layout.
 // When selectedPromptId changes, loads full prompt detail + version list into
-// the editor store so TopNav, LeftPanel, and SandboxPanel all read from one source.
+// the editor store so the sidebar, LeftPanel, and SandboxPanel all read from one source.
 import { ref, watch, onMounted } from 'vue';
 import { api } from './api';
 import { useAppState } from './store/app';
@@ -10,15 +10,18 @@ import {
   activeVersionText, versions, variableValues, sandboxOutput,
 } from './store/editor';
 import Sidebar from './components/Sidebar.vue';
-import TopNav from './components/TopNav.vue';
+import SaveVersionModal from './components/SaveVersionModal.vue';
+import SettingsModal from './components/SettingsModal.vue';
 import OverviewModule from './views/OverviewModule.vue';
 import ABTesterModule from './views/ABTesterModule.vue';
+import { loadModels } from './store/settings';
 
 const { prompts, selectedPromptId } = useAppState();
 
-// Load sidebar data on mount
+// Load sidebar data + available models on mount
 onMounted(async () => {
   prompts.value = await api.prompts.list();
+  loadModels();
 });
 
 // Load editor data whenever the selected prompt changes
@@ -55,8 +58,6 @@ watch(selectedPromptId, async (id) => {
 
   <div class="workspace">
     <template v-if="selectedPromptId !== null">
-      <TopNav />
-
       <div class="module-area">
         <OverviewModule v-if="activeModule === 'overview'" />
         <ABTesterModule v-else-if="activeModule === 'ab-tester'" />
@@ -68,6 +69,9 @@ watch(selectedPromptId, async (id) => {
       <p class="empty-sub">Select a prompt or create a new one.</p>
     </div>
   </div>
+
+  <SaveVersionModal />
+  <SettingsModal />
 </template>
 
 <style scoped>
