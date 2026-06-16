@@ -4,7 +4,7 @@ import { marked } from 'marked';
 import { api } from '../api';
 import type { SandboxRunResult } from '../api';
 import {
-  activePromptData, activeBranchId, activeVersionId, branchTree,
+  activePromptData, activeVersionId, versions,
 } from '../store/editor';
 import { extractVariables, substituteVariables } from '../utils/variables';
 
@@ -17,16 +17,12 @@ const errorA   = ref<string | null>(null);
 const errorB   = ref<string | null>(null);
 
 // ── Version selectors ──────────────────────────────────────────────────────────
-const aBranchId  = ref<number | null>(null);
 const aVersionId = ref<number | null>(null);
-const bBranchId  = ref<number | null>(null);
 const bVersionId = ref<number | null>(null);
 
 // Reset selections and outputs whenever the active prompt changes
 watch(() => activePromptData.value?.id, () => {
-  aBranchId.value  = activeBranchId.value;
   aVersionId.value = activeVersionId.value;
-  bBranchId.value  = activeBranchId.value;
   bVersionId.value = activeVersionId.value;
   outputA.value = null;
   outputB.value = null;
@@ -34,32 +30,12 @@ watch(() => activePromptData.value?.id, () => {
   errorB.value  = null;
 }, { immediate: true });
 
-// When the user picks a different branch for a side, auto-select that branch's current version
-watch(aBranchId, (id) => {
-  const branch = branchTree.value.find(b => b.id === id);
-  aVersionId.value =
-    branch?.versions.find(v => v.is_current === 1)?.id ??
-    branch?.versions[0]?.id ?? null;
-});
-watch(bBranchId, (id) => {
-  const branch = branchTree.value.find(b => b.id === id);
-  bVersionId.value =
-    branch?.versions.find(v => v.is_current === 1)?.id ??
-    branch?.versions[0]?.id ?? null;
-});
-
-const aText = computed(() => {
-  const branch = branchTree.value.find(b => b.id === aBranchId.value);
-  return branch?.versions.find(v => v.id === aVersionId.value)?.text ?? '';
-});
-const bText = computed(() => {
-  const branch = branchTree.value.find(b => b.id === bBranchId.value);
-  return branch?.versions.find(v => v.id === bVersionId.value)?.text ?? '';
-});
-
-function versionsFor(branchId: number | null) {
-  return branchTree.value.find(b => b.id === branchId)?.versions ?? [];
-}
+const aText = computed(() =>
+  versions.value.find(v => v.id === aVersionId.value)?.text ?? ''
+);
+const bText = computed(() =>
+  versions.value.find(v => v.id === bVersionId.value)?.text ?? ''
+);
 
 // ── Variables (union of both sides) ───────────────────────────────────────────
 const varValues    = ref<Record<string, string>>({});
@@ -217,12 +193,9 @@ function copy(output: SandboxRunResult | null) {
       <div class="side">
         <div class="side-header">
           <span class="side-badge">A</span>
-          <select v-model="aBranchId" class="sel-branch">
-            <option v-for="b in branchTree" :key="b.id" :value="b.id">{{ b.name }}</option>
-          </select>
           <select v-model="aVersionId" class="sel-version">
-            <option v-for="v in versionsFor(aBranchId)" :key="v.id" :value="v.id">
-              v{{ v.major }}.{{ v.minor }}{{ v.is_current ? ' ★' : '' }}
+            <option v-for="v in versions" :key="v.id" :value="v.id">
+              {{ v.name }}{{ v.is_current ? ' ★' : '' }}
             </option>
           </select>
           <button class="eye-btn" title="View prompt" @click="promptModal = 'a'">
@@ -259,12 +232,9 @@ function copy(output: SandboxRunResult | null) {
       <div class="side">
         <div class="side-header">
           <span class="side-badge">B</span>
-          <select v-model="bBranchId" class="sel-branch">
-            <option v-for="b in branchTree" :key="b.id" :value="b.id">{{ b.name }}</option>
-          </select>
           <select v-model="bVersionId" class="sel-version">
-            <option v-for="v in versionsFor(bBranchId)" :key="v.id" :value="v.id">
-              v{{ v.major }}.{{ v.minor }}{{ v.is_current ? ' ★' : '' }}
+            <option v-for="v in versions" :key="v.id" :value="v.id">
+              {{ v.name }}{{ v.is_current ? ' ★' : '' }}
             </option>
           </select>
           <button class="eye-btn" title="View prompt" @click="promptModal = 'b'">
@@ -496,7 +466,7 @@ function copy(output: SandboxRunResult | null) {
   flex-shrink: 0;
 }
 
-.sel-branch, .sel-version {
+.sel-version {
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 4px;
@@ -506,7 +476,7 @@ function copy(output: SandboxRunResult | null) {
   padding: 4px 8px;
   cursor: pointer;
 }
-.sel-branch:focus, .sel-version:focus { outline: none; border-color: #aaa; }
+.sel-version:focus { outline: none; border-color: #aaa; }
 
 .eye-btn {
   margin-left: auto;

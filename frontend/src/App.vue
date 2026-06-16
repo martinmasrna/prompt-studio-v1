@@ -1,28 +1,24 @@
 <script setup lang="ts">
 // Root component. Bootstraps shared data and coordinates top-level layout.
-// When selectedPromptId changes, loads full prompt detail + branch tree into
+// When selectedPromptId changes, loads full prompt detail + version list into
 // the editor store so TopNav, LeftPanel, and SandboxPanel all read from one source.
 import { ref, watch, onMounted } from 'vue';
 import { api } from './api';
 import { useAppState } from './store/app';
 import {
-  activeModule, activePromptData, activeBranchId, activeVersionId,
-  activeVersionText, branchTree, variableValues, sandboxOutput,
+  activeModule, activePromptData, activeVersionId,
+  activeVersionText, versions, variableValues, sandboxOutput,
 } from './store/editor';
 import Sidebar from './components/Sidebar.vue';
 import TopNav from './components/TopNav.vue';
 import OverviewModule from './views/OverviewModule.vue';
 import ABTesterModule from './views/ABTesterModule.vue';
-import ComingSoon from './views/ComingSoon.vue';
 
-const { folders, prompts, selectedPromptId } = useAppState();
+const { prompts, selectedPromptId } = useAppState();
 
 // Load sidebar data on mount
 onMounted(async () => {
-  [folders.value, prompts.value] = await Promise.all([
-    api.folders.list(),
-    api.prompts.list(),
-  ]);
+  prompts.value = await api.prompts.list();
 });
 
 // Load editor data whenever the selected prompt changes
@@ -31,31 +27,27 @@ watch(selectedPromptId, async (id) => {
 
   if (id === null) {
     activePromptData.value = null;
-    branchTree.value = [];
+    versions.value = [];
     activeVersionId.value = null;
-    activeBranchId.value = null;
     activeVersionText.value = '';
     variableValues.value = {};
     return;
   }
 
-  const [detail, branches] = await Promise.all([
+  const [detail, versionList] = await Promise.all([
     api.prompts.get(id),
-    api.prompts.branches(id),
+    api.prompts.versions(id),
   ]);
 
   activePromptData.value = detail;
-  branchTree.value = branches;
+  versions.value = versionList;
 
   const cv = detail.current_version;
   activeVersionId.value  = cv?.id ?? null;
-  activeBranchId.value   = cv?.branch_id ?? null;
   activeVersionText.value = cv?.text ?? '';
   variableValues.value = {};
 });
 
-// TopNav emits openSaveModal which we relay to it (it owns the modal internally)
-// — nothing needed here; OverviewModule → TopNav communication is via store.
 </script>
 
 <template>
@@ -68,8 +60,6 @@ watch(selectedPromptId, async (id) => {
       <div class="module-area">
         <OverviewModule v-if="activeModule === 'overview'" />
         <ABTesterModule v-else-if="activeModule === 'ab-tester'" />
-        <ComingSoon v-else-if="activeModule === 'doctor'"     label="Prompt Doctor" />
-        <ComingSoon v-else-if="activeModule === 'brancher'"   label="Prompt Brancher" />
       </div>
     </template>
 

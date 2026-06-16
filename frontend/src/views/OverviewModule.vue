@@ -13,12 +13,10 @@ const sandboxOpen = ref(true);
 
 <template>
   <div class="overview" :class="{ 'sandbox-closed': !sandboxOpen }">
-    <!-- Left panel -->
     <div class="panel left">
       <LeftPanel />
     </div>
 
-    <!-- Toggle -->
     <button
       class="panel-toggle"
       :title="sandboxOpen ? 'Collapse sandbox' : 'Expand sandbox'"
@@ -32,7 +30,6 @@ const sandboxOpen = ref(true);
       </svg>
     </button>
 
-    <!-- Right panel (sandbox) -->
     <Transition name="slide">
       <div v-if="sandboxOpen" class="panel right">
         <SandboxPanel />
@@ -49,7 +46,11 @@ const sandboxOpen = ref(true);
   height: 100%;
 }
 
-.panel { overflow: hidden; display: flex; flex-direction: column; }
+.panel {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
 
 .left {
   flex: 55;
