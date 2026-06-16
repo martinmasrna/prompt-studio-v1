@@ -1,9 +1,9 @@
 // Module-level singletons for all editor state. Keeping these at module scope
 // means any component can import and mutate without prop-drilling or Pinia setup.
 import { ref } from 'vue';
-import type { PromptDetail, BranchWithVersions } from '../api';
+import type { PromptDetail, VersionInfo } from '../api';
 
-export type ModuleTab = 'overview' | 'ab-tester' | 'doctor' | 'brancher';
+export type ModuleTab = 'overview' | 'ab-tester';
 
 export interface SandboxEntry {
   id: number;
@@ -16,10 +16,9 @@ export interface SandboxEntry {
 
 export const activeModule      = ref<ModuleTab>('overview');
 export const activePromptData  = ref<PromptDetail | null>(null);
-export const activeBranchId    = ref<number | null>(null);
 export const activeVersionId   = ref<number | null>(null);
 export const activeVersionText = ref<string>('');
-export const branchTree        = ref<BranchWithVersions[]>([]);
+export const versions          = ref<VersionInfo[]>([]);
 
 // Variable values are shared between LeftPanel and SandboxPanel
 export const variableValues = ref<Record<string, string>>({});
@@ -43,10 +42,9 @@ export function useEditorState() {
   return {
     activeModule,
     activePromptData,
-    activeBranchId,
     activeVersionId,
     activeVersionText,
-    branchTree,
+    versions,
     variableValues,
     sandboxOutput,
     outputLog,

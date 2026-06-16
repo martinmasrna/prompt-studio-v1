@@ -1,116 +1,63 @@
 <script setup lang="ts">
 // Top navigation bar. Renders only when a prompt is selected.
-// Owns the version-selector dropdown and both modals (save version, new branch).
+// Owns the version-selector dropdown and the save-version modal.
 import { ref, computed, watch } from 'vue';
 import { api } from '../api';
 import {
-  activeModule, activePromptData, activeBranchId, activeVersionId,
-  activeVersionText, branchTree, showSaveModal, type ModuleTab,
+  activeModule, activePromptData, activeVersionId,
+  activeVersionText, versions, showSaveModal, type ModuleTab,
 } from '../store/editor';
 
 // ── Module tabs ────────────────────────────────────────────────────────────────
 const TABS: { id: ModuleTab; label: string }[] = [
   { id: 'overview',   label: 'Overview' },
   { id: 'ab-tester',  label: 'A/B Tester' },
-  { id: 'doctor',     label: 'Prompt Doctor' },
-  { id: 'brancher',   label: 'Prompt Brancher' },
 ];
 
 // ── Version selector ──────────────────────────────────────────────────────────
-// Flatten branch tree into <optgroup> + <option> pairs keyed by version ID
-const versionOptions = computed(() =>
-  branchTree.value.map(branch => ({
-    branchName: branch.name,
-    versions: branch.versions.map(v => ({
-      value: v.id,
-      label: `${branch.name} ${v.major}.${v.minor}${v.is_current ? ' ✦' : ''}`,
-      text: v.text,
-      branchId: branch.id,
-    })),
-  }))
-);
-
 // v-model value is the active version ID as a string (native select uses strings)
 const selectedVersionId = computed({
   get: () => String(activeVersionId.value ?? ''),
   set: async (val: string) => {
     const id = Number(val);
-    // Find in cached branchTree so we don't need a round-trip for the text
-    for (const branch of branchTree.value) {
-      const v = branch.versions.find(v => v.id === id);
-      if (v) {
-        activeVersionId.value = id;
-        activeBranchId.value = branch.id;
-        activeVersionText.value = v.text;
-        // Persist the is_current flag so the selection survives reload
-        await api.versions.setCurrent(id);
-        return;
-      }
+    const v = versions.value.find(v => v.id === id);
+    if (v) {
+      activeVersionId.value = id;
+      activeVersionText.value = v.text;
+      // Persist the is_current flag so the selection survives reload
+      await api.versions.setCurrent(id);
     }
   },
 });
 
 // ── Save-as-new-version modal ─────────────────────────────────────────────────
 // showSaveModal lives in the editor store so LeftPanel can trigger it directly.
-const saveBump       = ref<'minor' | 'major'>('minor');
-const saveNote       = ref('');
-const saving         = ref(false);
-
-// Compute the preview label for the next version number
-const nextVersionLabel = computed(() => {
-  const branch = branchTree.value.find(b => b.id === activeBranchId.value);
-  const cur = branch?.versions.find(v => v.is_current);
-  if (!cur) return '';
-  return saveBump.value === 'major'
-    ? `${cur.major + 1}.0`
-    : `${cur.major}.${cur.minor + 1}`;
-});
+const saveName = ref('');
+const saveNote = ref('');
+const saving   = ref(false);
 
 async function confirmSaveVersion() {
-  if (!activeBranchId.value) return;
+  if (!activePromptData.value || !saveName.value.trim()) return;
   saving.value = true;
   try {
-    const result = await api.branches.createVersion(activeBranchId.value, {
+    const result = await api.prompts.createVersion(activePromptData.value.id, {
       text: activeVersionText.value,
-      bump: saveBump.value,
+      name: saveName.value.trim(),
       note: saveNote.value.trim() || undefined,
     });
-    // Refresh branch tree and update active version
-    branchTree.value = await api.prompts.branches(activePromptData.value!.id);
+    // Refresh version list and update active version
+    versions.value = await api.prompts.versions(activePromptData.value.id);
     activeVersionId.value = result.id;
-    activeVersionText.value = activeVersionText.value; // unchanged
     showSaveModal.value = false;
+    saveName.value = '';
     saveNote.value = '';
   } finally {
     saving.value = false;
   }
 }
 
-// ── New branch modal ──────────────────────────────────────────────────────────
-const showBranchModal = ref(false);
-const newBranchName   = ref('');
-const creatingBranch  = ref(false);
-
-async function confirmNewBranch() {
-  if (!newBranchName.value.trim() || !activePromptData.value) return;
-  creatingBranch.value = true;
-  try {
-    const result = await api.prompts.createBranch(activePromptData.value.id, newBranchName.value.trim());
-    branchTree.value = await api.prompts.branches(activePromptData.value.id);
-    // Switch to the new branch's v1.0
-    activeBranchId.value = result.id;
-    activeVersionId.value = result.version_id;
-    const newBranch = branchTree.value.find(b => b.id === result.id);
-    activeVersionText.value = newBranch?.versions[0]?.text ?? '';
-    showBranchModal.value = false;
-    newBranchName.value = '';
-  } finally {
-    creatingBranch.value = false;
-  }
-}
-
-// Reset bump + note when modal opens
-watch(showSaveModal, open => { if (open) { saveBump.value = 'minor'; saveNote.value = ''; } });
+// Reset fields when modal opens
+watch(showSaveModal, open => { if (open) { saveName.value = ''; saveNote.value = ''; } });
 </script>
 
 <template>
@@ -135,19 +82,12 @@ watch(showSaveModal, open => { if (open) { saveBump.value = 'minor'; saveNote.va
         class="version-select"
         title="Switch version"
       >
-        <optgroup
-          v-for="group in versionOptions"
-          :key="group.branchName"
-          :label="group.branchName"
-        >
-          <option v-for="opt in group.versions" :key="opt.value" :value="String(opt.value)">
-            {{ opt.label }}
-          </option>
-        </optgroup>
+        <option v-for="v in versions" :key="v.id" :value="String(v.id)">
+          {{ v.name }}{{ v.is_current ? ' ✦' : '' }}
+        </option>
       </select>
 
       <button class="btn-ghost" @click="showSaveModal = true">Save as new version</button>
-      <button class="btn-ghost" @click="showBranchModal = true">+ New branch</button>
     </div>
   </header>
 
@@ -157,20 +97,13 @@ watch(showSaveModal, open => { if (open) { saveBump.value = 'minor'; saveNote.va
       <div class="modal">
         <h2 class="modal-title">Save as new version</h2>
 
-        <div class="radio-group">
-          <label class="radio-label">
-            <input v-model="saveBump" type="radio" value="minor" />
-            Minor bump
-            <span class="radio-hint">small improvement, same intent</span>
-          </label>
-          <label class="radio-label">
-            <input v-model="saveBump" type="radio" value="major" />
-            Major bump
-            <span class="radio-hint">significant rewrite or change of direction</span>
-          </label>
-        </div>
-
-        <p class="version-preview">Will save as version <strong>{{ nextVersionLabel }}</strong></p>
+        <input
+          v-model="saveName"
+          class="modal-input"
+          placeholder="Version name (e.g. concise rewrite, v2, formal-tone)"
+          @keydown.enter="confirmSaveVersion"
+          autofocus
+        />
 
         <textarea
           v-model="saveNote"
@@ -181,34 +114,8 @@ watch(showSaveModal, open => { if (open) { saveBump.value = 'minor'; saveNote.va
 
         <div class="modal-actions">
           <button class="btn-ghost" @click="showSaveModal = false">Cancel</button>
-          <button class="btn-primary" :disabled="saving" @click="confirmSaveVersion">
+          <button class="btn-primary" :disabled="saving || !saveName.trim()" @click="confirmSaveVersion">
             {{ saving ? 'Saving…' : 'Save version' }}
-          </button>
-        </div>
-      </div>
-    </div>
-  </Teleport>
-
-  <!-- New branch modal -->
-  <Teleport to="body">
-    <div v-if="showBranchModal" class="overlay" @click.self="showBranchModal = false">
-      <div class="modal">
-        <h2 class="modal-title">New branch</h2>
-        <p class="modal-sub">Starts at v1.0, copied from the current version's text.</p>
-        <input
-          v-model="newBranchName"
-          class="modal-input"
-          placeholder="Branch name (e.g. formal, concise)"
-          @keydown.enter="confirmNewBranch"
-        />
-        <div class="modal-actions">
-          <button class="btn-ghost" @click="showBranchModal = false">Cancel</button>
-          <button
-            class="btn-primary"
-            :disabled="!newBranchName.trim() || creatingBranch"
-            @click="confirmNewBranch"
-          >
-            {{ creatingBranch ? 'Creating…' : 'Create branch' }}
           </button>
         </div>
       </div>
@@ -325,35 +232,6 @@ watch(showSaveModal, open => { if (open) { saveBump.value = 'minor'; saveNote.va
   color: var(--text-muted);
   margin-top: -8px;
 }
-
-.radio-group {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.radio-label {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  font-size: 13px;
-  color: var(--text-secondary);
-  cursor: pointer;
-}
-
-.radio-label input { accent-color: #888; cursor: pointer; }
-
-.radio-hint {
-  font-size: 12px;
-  color: var(--text-muted);
-}
-
-.version-preview {
-  font-size: 12px;
-  color: var(--text-muted);
-}
-
-.version-preview strong { color: var(--text-secondary); }
 
 .modal-textarea,
 .modal-input {
