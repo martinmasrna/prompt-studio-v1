@@ -5,17 +5,22 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vue-tsc && vite build",
+    "build": "vue-tsc --noEmit && vite build",
+    "test": "vitest run",
     "preview": "vite preview"
   },
   "dependencies": {
+    "dompurify": "^3.4.11",
+    "katex": "^0.17.0",
     "marked": "^18.0.4",
+    "marked-katex": "^0.3.8",
     "vue": "^3.4.21"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.0.4",
     "typescript": "^5.4.5",
     "vite": "^5.2.8",
+    "vitest": "^4.1.9",
     "vue-tsc": "^2.0.13"
   }
 }

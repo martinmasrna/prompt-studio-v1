@@ -14,7 +14,9 @@ export const modelsError     = ref<string | null>(null);
 // The chosen model's id. Persisted in localStorage so it survives reloads. Sent as
 // `model_id` on /api/llm/run; the backend resolves it to the right server + model
 // (and falls back to its default when null).
-export const activeModelId = ref<string | null>(localStorage.getItem(STORAGE_KEY));
+export const activeModelId = ref<string | null>(
+  typeof localStorage === 'undefined' ? null : localStorage.getItem(STORAGE_KEY)
+);
 
 // Friendly name of the active model, for display in the sidebar.
 export const activeModelLabel = computed(() =>
@@ -46,5 +48,5 @@ export async function loadModels(): Promise<void> {
 
 export function setActiveModel(id: string): void {
   activeModelId.value = id;
-  localStorage.setItem(STORAGE_KEY, id);
+  if (typeof localStorage !== 'undefined') localStorage.setItem(STORAGE_KEY, id);
 }

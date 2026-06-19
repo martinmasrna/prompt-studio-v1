@@ -3,26 +3,27 @@
 // and displays the response. All LLM config state is local — it doesn't need
 // to survive prompt switches.
 import { ref, computed } from 'vue';
-import { marked } from 'marked';
+import { renderContent } from '../utils/renderContent';
 import { api } from '../api';
-import { activeVersionText, variableValues, sandboxOutput, addSandboxEntry } from '../store/editor';
+import { activeVersionId, activeVersionText, variableValues, sandboxOutput, addSandboxEntry } from '../store/editor';
 import { activeModelId } from '../store/settings';
-import { extractVariables, substituteVariables } from '../utils/variables';
+import {
+  systemPrompt, temperature, topP, topK, maxTokens, enableThinking,
+} from '../store/testCases';
+import TestCaseControls from '../components/TestCaseControls.vue';
+import ResultActions from '../components/ResultActions.vue';
+import { extractVariables, missingVariables, substituteVariables } from '../utils/variables';
+import { captureEvaluationContext, completeEvaluation } from '../utils/evaluations';
 
 // ── Config state ───────────────────────────────────────────────────────────────
-const systemPrompt       = ref('');
 const systemPromptOpen   = ref(false);
-const enableThinking     = ref(false);
-const temperature  = ref(0.7);
-const topP         = ref(1.0);
-const topK         = ref(40);
-const maxTokens    = ref(1024);
 
 // The user message sent to the LLM is always the active prompt text with variables substituted.
 const userMessage = computed(() => substituteVariables(activeVersionText.value, variableValues.value));
 
 // ── Variables panel (mirrors LeftPanel; shares variableValues from store) ──────
 const detectedVars = computed(() => extractVariables(activeVersionText.value));
+const missing = computed(() => missingVariables(activeVersionText.value, variableValues.value));
 
 // ── Run ────────────────────────────────────────────────────────────────────────
 const running  = ref(false);
@@ -30,8 +31,20 @@ const runError = ref<string | null>(null);
 
 async function runLLM() {
   if (running.value) return;
+  if (missing.value.length) {
+    runError.value = `Fill in required variables: ${missing.value.join(', ')}`;
+    return;
+  }
   running.value = true;
   runError.value = null;
+  if (activeVersionId.value === null) {
+    running.value = false;
+    runError.value = 'No prompt version selected';
+    return;
+  }
+  const context = captureEvaluationContext(
+    'sandbox', activeVersionId.value, activeVersionText.value, userMessage.value
+  );
 
   try {
     const result = await api.llm.run({
@@ -51,6 +64,8 @@ async function runLLM() {
       text:        result.text,
       tokens_used: result.tokens_used,
       latency_ms:  result.latency_ms,
+      evaluation: completeEvaluation(context, result),
+      savedEvaluationId: null,
     });
   } catch (e: unknown) {
     runError.value = e instanceof Error ? e.message : 'Unknown error';
@@ -64,8 +79,12 @@ function copyOutput() {
   if (sandboxOutput.value) navigator.clipboard.writeText(sandboxOutput.value.text);
 }
 
+function markSaved(id: number) {
+  if (sandboxOutput.value) sandboxOutput.value.savedEvaluationId = id;
+}
+
 const renderedOutput = computed(() =>
-  sandboxOutput.value?.text ? marked.parse(sandboxOutput.value.text) as string : ''
+  sandboxOutput.value?.text ? renderContent(sandboxOutput.value.text) : ''
 );
 
 </script>
@@ -74,6 +93,8 @@ const renderedOutput = computed(() =>
   <div class="sandbox-panel">
     <!-- ── Configuration ─────────────────────────────── -->
     <div class="config-section">
+      <TestCaseControls />
+
       <div class="field-block">
         <button class="collapsible-label" @click="systemPromptOpen = !systemPromptOpen">
           <span class="field-label">System prompt</span>
@@ -95,7 +116,14 @@ const renderedOutput = computed(() =>
         <div class="var-grid">
           <template v-for="varName in detectedVars" :key="varName">
             <span class="var-name">{{ varName }}</span>
-            <input v-model="variableValues[varName]" class="var-input" :placeholder="`{{${varName}}}`" />
+            <textarea
+              v-model="variableValues[varName]"
+              class="var-input"
+              :aria-label="`Variable ${varName}`"
+              :placeholder="`{{${varName}}}`"
+              rows="2"
+              spellcheck="false"
+            />
           </template>
         </div>
       </div>
@@ -104,7 +132,7 @@ const renderedOutput = computed(() =>
       <div class="param-grid">
         <div class="param">
           <label class="field-label">Temperature <span class="param-value">{{ temperature.toFixed(1) }}</span></label>
-          <input v-model.number="temperature" type="range" min="0" max="2" step="0.1" class="slider" />
+          <input v-model.number="temperature" aria-label="Temperature" type="range" min="0" max="2" step="0.1" class="slider" />
         </div>
         <div class="param">
           <label class="field-label">Top-P <span class="param-value">{{ topP.toFixed(2) }}</span></label>
@@ -162,6 +190,11 @@ const renderedOutput = computed(() =>
           <div class="output-actions">
             <button class="btn-sm" @click="copyOutput">Copy output</button>
           </div>
+          <ResultActions
+            :evaluation="sandboxOutput.evaluation"
+            :saved-id="sandboxOutput.savedEvaluationId"
+            @saved="markSaved"
+          />
         </div>
       </template>
     </div>
@@ -237,6 +270,7 @@ const renderedOutput = computed(() =>
 .var-grid { display: grid; grid-template-columns: 100px 1fr; gap: 6px 10px; align-items: center; }
 .var-name { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); }
 .var-input {
+  width: 100%;
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 4px;
@@ -244,6 +278,8 @@ const renderedOutput = computed(() =>
   font-size: 12px;
   font-family: inherit;
   padding: 4px 8px;
+  line-height: 1.5;
+  resize: vertical;
 }
 .var-input:focus { outline: none; border-color: #aaa; }
 

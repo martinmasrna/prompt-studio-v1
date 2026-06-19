@@ -41,10 +41,10 @@ const currentVersionName = computed(() =>
 // ── Variables ─────────────────────────────────────────────────────────────────
 const detectedVars = computed(() => extractVariables(localText.value));
 
-// Prune variableValues when vars disappear, seed new ones with empty string
+// Seed new variables without deleting values saved for other prompt versions.
 watch(detectedVars, vars => {
-  const next: Record<string, string> = {};
-  for (const v of vars) next[v] = variableValues.value[v] ?? '';
+  const next = { ...variableValues.value };
+  for (const v of vars) next[v] ??= '';
   variableValues.value = next;
 }, { immediate: true });
 
@@ -174,7 +174,15 @@ async function deleteVersion(versionId: number, name: string) {
           <span v-if="isDirty" class="unsaved-dot" title="Unsaved changes">• unsaved</span>
         </span>
       </div>
-      <textarea v-model="localText" class="prompt-textarea" rows="20" spellcheck="false" />
+      <textarea
+        v-model="localText"
+        class="prompt-textarea"
+        aria-label="Prompt text"
+        rows="20"
+        spellcheck="false"
+        @keydown.ctrl.s.prevent="saveChanges"
+        @keydown.meta.s.prevent="saveChanges"
+      />
     </div>
 
     <!-- Version history -->
@@ -249,6 +257,7 @@ async function deleteVersion(versionId: number, name: string) {
         class="btn-action-primary"
         :disabled="savingChanges || !activeVersionId || !isDirty"
         @click="saveChanges"
+        title="Save changes (Ctrl+S)"
       >{{ savingChanges ? 'Saving…' : 'Save changes' }}</button>
       <button class="btn-action-secondary" @click="activeVersionText = localText; showSaveModal = true">Save as new version</button>
     </div>

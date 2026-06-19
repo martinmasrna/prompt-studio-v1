@@ -18,6 +18,8 @@ const collapsed = ref(false);
 const TABS: { id: ModuleTab; label: string }[] = [
   { id: 'overview',   label: 'Overview' },
   { id: 'ab-tester',  label: 'A/B Tester' },
+  { id: 'results',    label: 'Results' },
+  { id: 'issues',     label: 'Issues' },
 ];
 
 // ── New-prompt dialog ──────────────────────────────────────────────────────────
@@ -96,9 +98,15 @@ async function deletePrompt(id: number, name: string) {
             <line x1="10" y1="9" x2="8" y2="9" />
           </svg>
           <!-- A/B Tester: two columns -->
-          <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <svg v-else-if="tab.id === 'ab-tester'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <rect x="3" y="3" width="7" height="18" rx="1" />
             <rect x="14" y="3" width="7" height="18" rx="1" />
+          </svg>
+          <svg v-else-if="tab.id === 'results'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 4h16v16H4z"/><path d="M8 9h8M8 13h8M8 17h5"/>
+          </svg>
+          <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="9"/><path d="M12 7v6M12 17h.01"/>
           </svg>
         </span>
         <span v-if="!collapsed" class="module-tab-label">{{ tab.label }}</span>

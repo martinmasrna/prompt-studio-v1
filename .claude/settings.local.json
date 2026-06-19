@@ -11,7 +11,21 @@
       "Bash(git add *)",
       "Bash(git commit *)",
       "Bash(git branch *)",
-      "Bash(git remote *)"
+      "Bash(git remote *)",
+      "PowerShell($env:Path = \"C:\\\\nvm4w\\\\nodejs;$env:Path\"; Set-Location \"C:\\\\Users\\\\masrna\\\\Projects\\\\Prompt Studio\\\\backend\"; npx tsc --noEmit)",
+      "PowerShell($env:Path = \"C:\\\\nvm4w\\\\nodejs;$env:Path\"; Set-Location \"C:\\\\Users\\\\masrna\\\\Projects\\\\Prompt Studio\\\\frontend\"; npx vue-tsc --noEmit)",
+      "PowerShell(npm run *)",
+      "Bash(git checkout *)",
+      "Bash(git config *)",
+      "Bash(node -e \"const{Database}=require\\('./backend/node_modules/node-sqlite3-wasm'\\);const db=new Database\\('./backend/data/prompt-studio.db'\\);console.log\\('tables:',db.all\\(\\\\\"SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'\\\\\"\\).map\\(r=>r.name\\).join\\(', '\\)\\);console.log\\('prompts cols:',db.all\\('PRAGMA table_info\\(prompts\\)'\\).map\\(c=>c.name\\).join\\(', '\\)\\);db.close\\(\\);\")",
+      "Bash(tasklist //FI \"IMAGENAME eq node.exe\")",
+      "Bash(netstat -ano)",
+      "Bash(gh --version)",
+      "Bash(gh auth *)",
+      "Bash(git push *)",
+      "Bash(find . -maxdepth 2 -name \".env*\" -not -path \"*/node_modules/*\")",
+      "Bash(find . -maxdepth 2 -iname \"readme*\" -not -path \"*/node_modules/*\")",
+      "PowerShell(Get-NetTCPConnection *)"
     ]
   }
 }

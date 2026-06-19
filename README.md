@@ -89,6 +89,13 @@ Respond in {{language}}.
 This prompt has two variables, `query` and `language`, which you fill in before
 each run.
 
+### Saved test
+A **saved test** remembers a prompt's variable values, system prompt, and run
+settings. Tests belong to the prompt, not to one version, so the same scenario
+can be reused in the Sandbox or applied to two different versions in the A/B
+Tester. Choose **Save as new** to create one; later changes persist only when you
+click **Save**.
+
 ---
 
 ## A guided tour of the screen
@@ -144,6 +151,18 @@ side **A** and a version for side **B**, set the shared options once, and click
 **Run both**. Both answers appear next to each other with their token counts and
 timings, so you can judge which version did better under identical settings. The
 👁 (eye) icon on each side shows the exact prompt text that was sent.
+
+### The workspace — "Results" tab
+Results contains runs you explicitly saved from the Sandbox or either A/B side.
+Each result preserves the exact prompt version, rendered prompt, variables,
+settings, model, output, and metrics from execution time. **Save comparison**
+stores both A/B sides as one grouped record.
+
+### The workspace — "Issues" tab
+Use **Flag as issue** beside any output to save its evidence and create an open
+issue in one step. Issues contain a title, an optional note, and an open/closed
+status. You can also create a manual issue for observations that do not have a
+linked result.
 
 ---
 
@@ -282,6 +301,23 @@ git.
 ---
 
 ## For developers
+
+### Testing
+
+Run the complete automated suite from the project root:
+
+```bash
+npm test
+```
+
+This runs backend migration/API tests against temporary SQLite databases and
+frontend utility/store tests with mocked API calls. It never uses your working
+database or requires a live LLM server. To run one layer independently, use
+`npm run test:backend` or `npm run test:frontend`.
+
+Browser E2E automation is intentionally deferred. Before a release, manually
+smoke-test the main path: create a prompt, save a test with variables, reload,
+restore it in Sandbox, and reuse it in A/B Tester.
 
 A lightweight, fully local two‑process app.
 

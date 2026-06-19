@@ -14,7 +14,10 @@ import SaveVersionModal from './components/SaveVersionModal.vue';
 import SettingsModal from './components/SettingsModal.vue';
 import OverviewModule from './views/OverviewModule.vue';
 import ABTesterModule from './views/ABTesterModule.vue';
+import ResultsModule from './views/ResultsModule.vue';
+import IssuesModule from './views/IssuesModule.vue';
 import { loadModels } from './store/settings';
+import { loadTestCases } from './store/testCases';
 
 const { prompts, selectedPromptId } = useAppState();
 
@@ -34,12 +37,14 @@ watch(selectedPromptId, async (id) => {
     activeVersionId.value = null;
     activeVersionText.value = '';
     variableValues.value = {};
+    await loadTestCases(null);
     return;
   }
 
   const [detail, versionList] = await Promise.all([
     api.prompts.get(id),
     api.prompts.versions(id),
+    loadTestCases(id),
   ]);
 
   activePromptData.value = detail;
@@ -48,7 +53,6 @@ watch(selectedPromptId, async (id) => {
   const cv = detail.current_version;
   activeVersionId.value  = cv?.id ?? null;
   activeVersionText.value = cv?.text ?? '';
-  variableValues.value = {};
 });
 
 </script>
@@ -61,6 +65,8 @@ watch(selectedPromptId, async (id) => {
       <div class="module-area">
         <OverviewModule v-if="activeModule === 'overview'" />
         <ABTesterModule v-else-if="activeModule === 'ab-tester'" />
+        <ResultsModule v-else-if="activeModule === 'results'" />
+        <IssuesModule v-else-if="activeModule === 'issues'" />
       </div>
     </template>
 

@@ -24,7 +24,9 @@ export interface ModelEntry {
   model: string;  // model name this server expects
 }
 
-const CONFIG_PATH = path.join(__dirname, '../config.json');
+const CONFIG_PATH = process.env.PROMPT_STUDIO_CONFIG_PATH
+  ? path.resolve(process.env.PROMPT_STUDIO_CONFIG_PATH)
+  : path.join(__dirname, '../config.json');
 const DEFAULT_PORT = 4701;
 
 interface RawConfig {

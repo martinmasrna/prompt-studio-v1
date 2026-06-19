@@ -8,14 +8,20 @@
 // any difference in the outputs comes from the wording, not the settings.
 // "Run both" fires the two requests in parallel and renders each result.
 import { ref, computed, watch } from 'vue';
-import { marked } from 'marked';
+import { renderContent } from '../utils/renderContent';
 import { api } from '../api';
-import type { SandboxRunResult } from '../api';
+import type { EvaluationInput, SandboxRunResult } from '../api';
 import {
-  activePromptData, activeVersionId, versions,
+  activePromptData, activeVersionId, versions, variableValues,
 } from '../store/editor';
 import { activeModelId } from '../store/settings';
-import { extractVariables, substituteVariables } from '../utils/variables';
+import {
+  systemPrompt, temperature, topP, topK, maxTokens, enableThinking,
+} from '../store/testCases';
+import TestCaseControls from '../components/TestCaseControls.vue';
+import ResultActions from '../components/ResultActions.vue';
+import { extractVariables, missingVariables, substituteVariables } from '../utils/variables';
+import { captureEvaluationContext, completeEvaluation } from '../utils/evaluations';
 
 // ── Run state ──────────────────────────────────────────────────────────────────
 const outputA  = ref<SandboxRunResult | null>(null);
@@ -24,6 +30,12 @@ const runningA = ref(false);
 const runningB = ref(false);
 const errorA   = ref<string | null>(null);
 const errorB   = ref<string | null>(null);
+const evaluationA = ref<EvaluationInput | null>(null);
+const evaluationB = ref<EvaluationInput | null>(null);
+const savedA = ref<number | null>(null);
+const savedB = ref<number | null>(null);
+const savedComparison = ref<number | null>(null);
+const comparisonError = ref<string | null>(null);
 
 // ── Version selectors ──────────────────────────────────────────────────────────
 const aVersionId = ref<number | null>(null);
@@ -37,6 +49,12 @@ watch(() => activePromptData.value?.id, () => {
   outputB.value = null;
   errorA.value  = null;
   errorB.value  = null;
+  evaluationA.value = null;
+  evaluationB.value = null;
+  savedA.value = null;
+  savedB.value = null;
+  savedComparison.value = null;
+  comparisonError.value = null;
 }, { immediate: true });
 
 const aText = computed(() =>
@@ -47,43 +65,63 @@ const bText = computed(() =>
 );
 
 // ── Variables (union of both sides) ───────────────────────────────────────────
-const varValues    = ref<Record<string, string>>({});
 const detectedVars = computed(() => {
   const s = new Set([...extractVariables(aText.value), ...extractVariables(bText.value)]);
   return [...s];
 });
 watch(detectedVars, vars => {
-  const next: Record<string, string> = {};
-  for (const v of vars) next[v] = varValues.value[v] ?? '';
-  varValues.value = next;
+  const next = { ...variableValues.value };
+  for (const v of vars) next[v] ??= '';
+  variableValues.value = next;
 }, { immediate: true });
+const missing = computed(() => [
+  ...new Set([
+    ...missingVariables(aText.value, variableValues.value),
+    ...missingVariables(bText.value, variableValues.value),
+  ]),
+]);
 
 // ── Shared config ──────────────────────────────────────────────────────────────
-const systemPrompt   = ref('');
 const advancedOpen   = ref(false);
-const temperature    = ref(0.7);
-const topP             = ref(1.0);
-const topK             = ref(40);
-const maxTokens        = ref(1024);
-const enableThinking   = ref(false);
 
 const promptModal = ref<'a' | 'b' | null>(null);
 const modalText = computed(() =>
   promptModal.value === 'a'
-    ? substituteVariables(aText.value, varValues.value)
-    : substituteVariables(bText.value, varValues.value)
+    ? substituteVariables(aText.value, variableValues.value)
+    : substituteVariables(bText.value, variableValues.value)
 );
 
 const isRunning = computed(() => runningA.value || runningB.value);
 
 async function runBoth() {
   if (isRunning.value) return;
+  if (missing.value.length) {
+    const message = `Fill in required variables: ${missing.value.join(', ')}`;
+    errorA.value = message;
+    errorB.value = message;
+    return;
+  }
+  if (aVersionId.value === null || bVersionId.value === null) {
+    errorA.value = 'Select both prompt versions';
+    errorB.value = 'Select both prompt versions';
+    return;
+  }
+  const renderedPromptA = substituteVariables(aText.value, variableValues.value);
+  const renderedPromptB = substituteVariables(bText.value, variableValues.value);
+  const contextA = captureEvaluationContext('ab', aVersionId.value, aText.value, renderedPromptA);
+  const contextB = captureEvaluationContext('ab', bVersionId.value, bText.value, renderedPromptB);
   outputA.value = null;
   outputB.value = null;
   errorA.value  = null;
   errorB.value  = null;
   runningA.value = true;
   runningB.value = true;
+  evaluationA.value = null;
+  evaluationB.value = null;
+  savedA.value = null;
+  savedB.value = null;
+  savedComparison.value = null;
+  comparisonError.value = null;
 
   const shared = {
     system_prompt:   systemPrompt.value || undefined,
@@ -96,24 +134,40 @@ async function runBoth() {
   };
 
   await Promise.all([
-    api.llm.run({ ...shared, user_message: substituteVariables(aText.value, varValues.value) })
-      .then(r  => { outputA.value = r; })
+    api.llm.run({ ...shared, user_message: renderedPromptA })
+      .then(r  => { outputA.value = r; evaluationA.value = completeEvaluation(contextA, r); })
       .catch(e => { errorA.value  = e instanceof Error ? e.message : 'Unknown error'; })
       .finally(() => { runningA.value = false; }),
 
-    api.llm.run({ ...shared, user_message: substituteVariables(bText.value, varValues.value) })
-      .then(r  => { outputB.value = r; })
+    api.llm.run({ ...shared, user_message: renderedPromptB })
+      .then(r  => { outputB.value = r; evaluationB.value = completeEvaluation(contextB, r); })
       .catch(e => { errorB.value  = e instanceof Error ? e.message : 'Unknown error'; })
       .finally(() => { runningB.value = false; }),
   ]);
 }
 
+async function saveComparison() {
+  if (!evaluationA.value || !evaluationB.value || savedComparison.value) return;
+  comparisonError.value = null;
+  try {
+    const comparison = await api.records.createComparison(evaluationA.value.prompt_id, [
+      savedA.value ? { evaluation_id: savedA.value } : { evaluation: evaluationA.value },
+      savedB.value ? { evaluation_id: savedB.value } : { evaluation: evaluationB.value },
+    ]);
+    savedComparison.value = comparison.id;
+    savedA.value = comparison.evaluations[0]?.id ?? savedA.value;
+    savedB.value = comparison.evaluations[1]?.id ?? savedB.value;
+  } catch (cause) {
+    comparisonError.value = cause instanceof Error ? cause.message : 'Could not save comparison';
+  }
+}
+
 // ── Markdown ───────────────────────────────────────────────────────────────────
 const renderedA = computed(() =>
-  outputA.value?.text ? marked.parse(outputA.value.text) as string : ''
+  outputA.value?.text ? renderContent(outputA.value.text) : ''
 );
 const renderedB = computed(() =>
-  outputB.value?.text ? marked.parse(outputB.value.text) as string : ''
+  outputB.value?.text ? renderContent(outputB.value.text) : ''
 );
 
 function copy(output: SandboxRunResult | null) {
@@ -127,13 +181,22 @@ function copy(output: SandboxRunResult | null) {
     <!-- ── Config bar ─────────────────────────────────────── -->
     <div class="config-bar">
 
+      <TestCaseControls />
+
       <!-- Variables (appear when either version uses {{placeholders}}) -->
       <div v-if="detectedVars.length" class="field-block">
         <label class="field-label">Variables</label>
         <div class="var-grid">
           <template v-for="v in detectedVars" :key="v">
             <span class="var-name">{{ v }}</span>
-            <input v-model="varValues[v]" class="var-input" :placeholder="`{{${v}}}`" />
+            <textarea
+              v-model="variableValues[v]"
+              class="var-input"
+              :aria-label="`Variable ${v}`"
+              :placeholder="`{{${v}}}`"
+              rows="2"
+              spellcheck="false"
+            />
           </template>
         </div>
       </div>
@@ -157,7 +220,7 @@ function copy(output: SandboxRunResult | null) {
           <div class="params-row">
             <div class="param">
               <label class="field-label">Temperature <span class="param-val">{{ temperature.toFixed(1) }}</span></label>
-              <input v-model.number="temperature" type="range" min="0" max="2" step="0.1" class="slider" />
+              <input v-model.number="temperature" aria-label="Temperature" type="range" min="0" max="2" step="0.1" class="slider" />
             </div>
             <div class="param">
               <label class="field-label">Top-P <span class="param-val">{{ topP.toFixed(2) }}</span></label>
@@ -189,6 +252,13 @@ function copy(output: SandboxRunResult | null) {
 
       <!-- Run button -->
       <div class="run-row">
+        <span v-if="comparisonError" class="comparison-error">{{ comparisonError }}</span>
+        <button
+          v-if="evaluationA && evaluationB"
+          class="save-comparison-btn"
+          :disabled="savedComparison !== null"
+          @click="saveComparison"
+        >{{ savedComparison ? 'Comparison saved' : 'Save comparison' }}</button>
         <button class="run-btn" :class="{ running: isRunning }" :disabled="isRunning" @click="runBoth">
           {{ isRunning ? 'Running…' : 'Run both' }}
         </button>
@@ -231,6 +301,12 @@ function copy(output: SandboxRunResult | null) {
               <span v-if="outputA.tokens_used != null" class="meta-chip">{{ outputA.tokens_used }} tokens</span>
               <span class="meta-chip">{{ outputA.latency_ms }} ms</span>
               <button class="btn-sm" style="margin-left: auto" @click="copy(outputA)">Copy</button>
+              <ResultActions
+                v-if="evaluationA"
+                :evaluation="evaluationA"
+                :saved-id="savedA"
+                @saved="savedA = $event"
+              />
             </div>
           </template>
         </div>
@@ -270,6 +346,12 @@ function copy(output: SandboxRunResult | null) {
               <span v-if="outputB.tokens_used != null" class="meta-chip">{{ outputB.tokens_used }} tokens</span>
               <span class="meta-chip">{{ outputB.latency_ms }} ms</span>
               <button class="btn-sm" style="margin-left: auto" @click="copy(outputB)">Copy</button>
+              <ResultActions
+                v-if="evaluationB"
+                :evaluation="evaluationB"
+                :saved-id="savedB"
+                @saved="savedB = $event"
+              />
             </div>
           </template>
         </div>
@@ -367,6 +449,7 @@ function copy(output: SandboxRunResult | null) {
 .var-grid { display: grid; grid-template-columns: 100px 1fr; gap: 6px 10px; align-items: center; }
 .var-name { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); }
 .var-input {
+  width: 100%;
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 4px;
@@ -374,6 +457,8 @@ function copy(output: SandboxRunResult | null) {
   font-size: 12px;
   font-family: inherit;
   padding: 4px 8px;
+  line-height: 1.5;
+  resize: vertical;
 }
 .var-input:focus { outline: none; border-color: #aaa; }
 
@@ -427,7 +512,11 @@ function copy(output: SandboxRunResult | null) {
 }
 .toggle-switch.on .toggle-thumb { transform: translateX(14px); }
 
-.run-row { display: flex; justify-content: flex-end; }
+.run-row { display: flex; justify-content: flex-end; align-items: center; gap: 8px; }
+.save-comparison-btn { padding: 7px 14px; background: var(--bg); border: 1px solid var(--border); border-radius: 5px; color: var(--text-secondary); font: inherit; font-size: 12px; cursor: pointer; }
+.save-comparison-btn:hover:not(:disabled) { border-color: #aaa; color: var(--text-primary); }
+.save-comparison-btn:disabled { opacity: .55; cursor: default; }
+.comparison-error { color: #c04040; font-size: 11px; margin-right: auto; }
 
 .run-btn {
   flex-shrink: 0;

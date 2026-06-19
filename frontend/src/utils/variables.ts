@@ -10,3 +10,7 @@ export function extractVariables(text: string): string[] {
 export function substituteVariables(text: string, values: Record<string, string>): string {
   return text.replace(VARIABLE_RE, (_, name: string) => values[name] ?? `{{${name}}}`);
 }
+
+export function missingVariables(text: string, values: Record<string, string>): string[] {
+  return extractVariables(text).filter(name => !values[name]?.trim());
+}
