@@ -33,7 +33,10 @@ export interface EvaluationInput {
 export interface Evaluation extends EvaluationInput {
   id: number;
   batch_id: number | null;
+  note: string | null;
   created_at: number;
+  // Present only on results listings: the issue this result was auto-saved for, if any.
+  issue_id?: number | null;
 }
 
 interface EvaluationRow extends Omit<Evaluation, 'variables' | 'enable_thinking'> {
@@ -142,7 +145,11 @@ export function createComparison(
 
 export function listResults(promptId: number): { evaluations: Evaluation[]; comparisons: Comparison[] } {
   const standalone = (db.all(
-    'SELECT * FROM evaluations WHERE prompt_id = ? AND batch_id IS NULL ORDER BY executed_at DESC, id DESC',
+    `SELECT e.*,
+            (SELECT i.id FROM issues i WHERE i.evaluation_id = e.id ORDER BY i.id LIMIT 1) AS issue_id
+     FROM evaluations e
+     WHERE e.prompt_id = ? AND e.batch_id IS NULL
+     ORDER BY e.executed_at DESC, e.id DESC`,
     [promptId]
   ) as unknown as EvaluationRow[]).map(mapEvaluation);
   const batches = db.all(
@@ -170,6 +177,12 @@ export function deleteEvaluation(id: number): 'deleted' | 'missing' | 'linked' |
   if (evaluationHasIssue(id)) return 'linked';
   db.run('DELETE FROM evaluations WHERE id = ?', [id]);
   return 'deleted';
+}
+
+export function updateEvaluationNote(id: number, note: string | null): Evaluation | null {
+  if (!getEvaluation(id)) return null;
+  db.run('UPDATE evaluations SET note = ? WHERE id = ?', [note, id]);
+  return getEvaluation(id);
 }
 
 export function deleteComparison(id: number): 'deleted' | 'missing' | 'linked' {

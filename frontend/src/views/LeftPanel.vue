@@ -208,7 +208,7 @@ async function deleteVersion(versionId: number, name: string) {
             v-model="nameBuffer"
             @blur="saveVersionName(v.id)"
             @keydown.enter="saveVersionName(v.id)"
-            @keydown.escape="editingNameId = null"
+            @keydown.esc="editingNameId = null"
             @click.stop
             autofocus
           />
@@ -228,7 +228,7 @@ async function deleteVersion(versionId: number, name: string) {
             v-model="noteBuffer"
             @blur="saveNote(v.id)"
             @keydown.enter="saveNote(v.id)"
-            @keydown.escape="editingNoteId = null"
+            @keydown.esc="editingNoteId = null"
             @click.stop
             autofocus
           />

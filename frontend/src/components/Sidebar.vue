@@ -5,6 +5,7 @@ import { ref } from 'vue';
 import { api } from '../api';
 import { useAppState } from '../store/app';
 import { activeModule, type ModuleTab } from '../store/editor';
+import { hrefFor } from '../store/router';
 import { showSettings, activeModelLabel } from '../store/settings';
 
 const { prompts, selectedPromptId } = useAppState();
@@ -21,6 +22,17 @@ const TABS: { id: ModuleTab; label: string }[] = [
   { id: 'results',    label: 'Results' },
   { id: 'issues',     label: 'Issues' },
 ];
+
+// Navbar tabs are real anchors so middle-click / Ctrl-click open them in a new
+// tab natively. For a plain left-click we keep SPA behaviour: intercept it and
+// switch the module in place. Modified clicks (new tab/window) are left to the
+// browser. Middle-click doesn't fire a `click` event at all, so the anchor's
+// href handles it without reaching this handler.
+function onTabClick(e: MouseEvent, id: ModuleTab) {
+  if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+  e.preventDefault();
+  activeModule.value = id;
+}
 
 // ── New-prompt dialog ──────────────────────────────────────────────────────────
 const showNewModal = ref(false);
@@ -80,13 +92,14 @@ async function deletePrompt(id: number, name: string) {
 
     <!-- Module tabs for the selected prompt -->
     <nav v-if="selectedPromptId !== null" class="module-tabs">
-      <button
+      <a
         v-for="tab in TABS"
         :key="tab.id"
         class="module-tab"
         :class="{ active: activeModule === tab.id }"
+        :href="hrefFor(tab.id)"
         :title="tab.label"
-        @click="activeModule = tab.id"
+        @click="onTabClick($event, tab.id)"
       >
         <span class="module-tab-icon">
           <!-- Overview: document -->
@@ -110,7 +123,7 @@ async function deletePrompt(id: number, name: string) {
           </svg>
         </span>
         <span v-if="!collapsed" class="module-tab-label">{{ tab.label }}</span>
-      </button>
+      </a>
     </nav>
 
     <div class="sidebar-header">
@@ -176,7 +189,7 @@ async function deletePrompt(id: number, name: string) {
           class="modal-input"
           placeholder="Prompt name"
           @keydown.enter="createPrompt"
-          @keydown.escape="showNewModal = false"
+          @keydown.esc="showNewModal = false"
           autofocus
         />
 
@@ -255,6 +268,7 @@ async function deletePrompt(id: number, name: string) {
   border-radius: 4px;
   white-space: nowrap;
   text-align: left;
+  text-decoration: none;
   transition: color 0.12s, background 0.12s;
 }
 

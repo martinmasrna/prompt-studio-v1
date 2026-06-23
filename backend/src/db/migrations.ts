@@ -172,6 +172,15 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 6,
+    name: 'add_evaluation_note',
+    up(db) {
+      if (!columnNames(db, 'evaluations').includes('note')) {
+        db.exec('ALTER TABLE evaluations ADD COLUMN note TEXT');
+      }
+    },
+  },
 ];
 
 export function runMigrations(db: SQLiteDatabase, migrationList: Migration[] = migrations): void {

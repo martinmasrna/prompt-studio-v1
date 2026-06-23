@@ -94,7 +94,10 @@ export interface EvaluationInput {
 export interface Evaluation extends EvaluationInput {
   id: number;
   batch_id: number | null;
+  note: string | null;
   created_at: number;
+  // Present only on results listings: the issue this result was auto-saved for, if any.
+  issue_id?: number | null;
 }
 
 export interface Comparison {
@@ -183,6 +186,8 @@ export const api = {
       promptId: number,
       items: [{ evaluation_id: number } | { evaluation: EvaluationInput }, { evaluation_id: number } | { evaluation: EvaluationInput }]
     ) => apiFetch<Comparison>('/api/comparisons', { method: 'POST', ...json({ prompt_id: promptId, items }) }),
+    updateEvaluation: (id: number, data: { note: string | null }) =>
+      apiFetch<Evaluation>(`/api/evaluations/${id}`, { method: 'PATCH', ...json(data) }),
     deleteEvaluation: (id: number) =>
       apiFetch<{ ok: boolean }>(`/api/evaluations/${id}`, { method: 'DELETE' }),
     deleteComparison: (id: number) =>

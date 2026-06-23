@@ -69,6 +69,7 @@ export const RESULTS_SCHEMA_SQL = `
     upstream_model_snapshot  TEXT NOT NULL,
     response_text            TEXT,
     error_text               TEXT,
+    note                     TEXT,
     tokens_used              INTEGER,
     latency_ms               INTEGER,
     executed_at              INTEGER NOT NULL,

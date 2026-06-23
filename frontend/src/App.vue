@@ -53,7 +53,7 @@ watch(selectedPromptId, async (id) => {
   const cv = detail.current_version;
   activeVersionId.value  = cv?.id ?? null;
   activeVersionText.value = cv?.text ?? '';
-});
+}, { immediate: true });
 
 </script>
 

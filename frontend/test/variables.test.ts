@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { extractVariables, missingVariables, substituteVariables } from '../src/utils/variables';
+import { extractVariables, missingVariables, substituteVariables, tokenizePrompt } from '../src/utils/variables';
 
 describe('prompt variable utilities', () => {
   it('extracts supported names once and preserves first-seen order', () => {
@@ -24,5 +24,42 @@ describe('prompt variable utilities', () => {
       '{{present}} {{empty}} {{spaces}} {{absent}}',
       { present: 'yes', empty: '', spaces: '   ' }
     )).toEqual(['empty', 'spaces', 'absent']);
+  });
+});
+
+describe('tokenizePrompt', () => {
+  it('splits text and variables in order, resolving values', () => {
+    expect(tokenizePrompt('Answer {{query}} now', { query: 'poker odds' })).toEqual([
+      { type: 'text', value: 'Answer ' },
+      { type: 'var', name: 'query', value: 'poker odds' },
+      { type: 'text', value: ' now' },
+    ]);
+  });
+
+  it('marks absent, empty, and whitespace-only variables as null', () => {
+    expect(tokenizePrompt('{{a}}{{b}}{{c}}', { a: '', b: '   ' })).toEqual([
+      { type: 'var', name: 'a', value: null },
+      { type: 'var', name: 'b', value: null },
+      { type: 'var', name: 'c', value: null },
+    ]);
+  });
+
+  it('handles adjacent and edge placeholders', () => {
+    expect(tokenizePrompt('{{x}} between {{y}}', { x: '1', y: '2' })).toEqual([
+      { type: 'var', name: 'x', value: '1' },
+      { type: 'text', value: ' between ' },
+      { type: 'var', name: 'y', value: '2' },
+    ]);
+  });
+
+  it('leaves malformed placeholders as literal text', () => {
+    expect(tokenizePrompt('{single} {{two words}}', {})).toEqual([
+      { type: 'text', value: '{single} {{two words}}' },
+    ]);
+  });
+
+  it('returns a single text segment with no variables, and empty array for empty input', () => {
+    expect(tokenizePrompt('plain', {})).toEqual([{ type: 'text', value: 'plain' }]);
+    expect(tokenizePrompt('', {})).toEqual([]);
   });
 });

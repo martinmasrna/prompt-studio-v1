@@ -71,6 +71,43 @@ test('results, comparisons, and issues API', async t => {
     assert.equal((await fetch(`${server.baseUrl}/api/evaluations/${created.body.id}`, { method: 'DELETE' })).status, 200);
   });
 
+  await t.test('edits a result note and reports issue linkage in listings', async () => {
+    const before = await requestJson<{ evaluations: Array<{ id: number; note: string | null; issue_id: number | null }> }>(
+      server.baseUrl, `/api/prompts/${prompt.body.id}/results`
+    );
+    const listed = before.body.evaluations.find(item => item.id === evaluationId)!;
+    assert.equal(listed.note, null);
+    assert.equal(listed.issue_id, null);
+
+    const noted = await requestJson<{ note: string }>(
+      server.baseUrl, `/api/evaluations/${evaluationId}`, jsonRequest('PATCH', { note: 'Good baseline' })
+    );
+    assert.equal(noted.response.status, 200);
+    assert.equal(noted.body.note, 'Good baseline');
+
+    const linked = await requestJson<{ id: number }>(
+      server.baseUrl,
+      `/api/prompts/${prompt.body.id}/issues`,
+      jsonRequest('POST', { title: 'Flag baseline', evaluation_id: evaluationId })
+    );
+
+    const after = await requestJson<{ evaluations: Array<{ id: number; note: string | null; issue_id: number | null }> }>(
+      server.baseUrl, `/api/prompts/${prompt.body.id}/results`
+    );
+    const refreshed = after.body.evaluations.find(item => item.id === evaluationId)!;
+    assert.equal(refreshed.note, 'Good baseline');
+    assert.equal(refreshed.issue_id, linked.body.id);
+
+    // Clearing the note stores NULL; 404 for a missing evaluation.
+    const cleared = await requestJson<{ note: string | null }>(
+      server.baseUrl, `/api/evaluations/${evaluationId}`, jsonRequest('PATCH', { note: '' })
+    );
+    assert.equal(cleared.body.note, null);
+    assert.equal((await fetch(`${server.baseUrl}/api/evaluations/999999`, jsonRequest('PATCH', { note: 'x' }))).status, 404);
+
+    assert.equal((await fetch(`${server.baseUrl}/api/issues/${linked.body.id}`, { method: 'DELETE' })).status, 200);
+  });
+
   let issueId = 0;
   let manualIssueId = 0;
   await t.test('creates linked and manual issues with open/closed lifecycle', async () => {

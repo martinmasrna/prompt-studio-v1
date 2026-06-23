@@ -25,7 +25,12 @@
       "Bash(git push *)",
       "Bash(find . -maxdepth 2 -name \".env*\" -not -path \"*/node_modules/*\")",
       "Bash(find . -maxdepth 2 -iname \"readme*\" -not -path \"*/node_modules/*\")",
-      "PowerShell(Get-NetTCPConnection *)"
+      "PowerShell(Get-NetTCPConnection *)",
+      "Bash(npx vite *)",
+      "Bash(/c/nvm4w/nodejs/npm.cmd test *)",
+      "Bash(/c/nvm4w/nodejs/npx.cmd vue-tsc *)",
+      "Bash(echo \"frontend vue-tsc exit: $?\")",
+      "Bash(echo \"vue-tsc exit: $?\")"
     ]
   }
 }

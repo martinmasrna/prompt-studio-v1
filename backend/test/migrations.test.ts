@@ -28,12 +28,15 @@ test('fresh migrations are complete and idempotent', () => withDatabase(db => {
     { version: 3, name: 'add_results_and_issues' },
     { version: 4, name: 'add_issue_resolutions' },
     { version: 5, name: 'add_diagnosed_issue_status' },
+    { version: 6, name: 'add_evaluation_note' },
   ]);
   assert.ok(db.get("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'test_cases'"));
   assert.ok(db.get("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'evaluations'"));
   const issueColumns = db.all('PRAGMA table_info(issues)') as unknown as Array<{ name: string }>;
   assert.ok(issueColumns.some(column => column.name === 'resolution_note'));
   assert.ok(issueColumns.some(column => column.name === 'resolved_version_id'));
+  const evaluationColumns = db.all('PRAGMA table_info(evaluations)') as unknown as Array<{ name: string }>;
+  assert.ok(evaluationColumns.some(column => column.name === 'note'));
 }));
 
 test('existing v1 data is preserved and duplicate current rows are repaired', () => withDatabase(db => {

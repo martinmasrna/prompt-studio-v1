@@ -12,6 +12,7 @@ import {
   getIssue,
   listIssues,
   listResults,
+  updateEvaluationNote,
   updateIssue,
   type EvaluationInput,
   type EvaluationSource,
@@ -151,6 +152,18 @@ router.post('/comparisons', (req, res) => {
       return input;
     }) as [EvaluationInput | number, EvaluationInput | number];
     res.status(201).json(createComparison(promptId, items));
+  } catch (error) {
+    if (!handleValidation(res, error)) throw error;
+  }
+});
+
+router.patch('/evaluations/:id', (req, res) => {
+  try {
+    const body = objectBody(req.body);
+    if (!('note' in body)) { res.status(400).json({ error: 'note is required' }); return; }
+    const updated = updateEvaluationNote(Number(req.params.id), nullableString(body, 'note'));
+    if (!updated) { res.status(404).json({ error: 'Evaluation not found' }); return; }
+    res.json(updated);
   } catch (error) {
     if (!handleValidation(res, error)) throw error;
   }
