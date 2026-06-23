@@ -20,6 +20,7 @@ import {
 } from '../store/testCases';
 import TestCaseControls from '../components/TestCaseControls.vue';
 import ResultActions from '../components/ResultActions.vue';
+import VariablesPanel from '../components/VariablesPanel.vue';
 import { extractVariables, missingVariables, substituteVariables } from '../utils/variables';
 import { captureEvaluationContext, completeEvaluation } from '../utils/evaluations';
 
@@ -184,22 +185,7 @@ function copy(output: SandboxRunResult | null) {
       <TestCaseControls />
 
       <!-- Variables (appear when either version uses {{placeholders}}) -->
-      <div v-if="detectedVars.length" class="field-block">
-        <label class="field-label">Variables</label>
-        <div class="var-grid">
-          <template v-for="v in detectedVars" :key="v">
-            <span class="var-name">{{ v }}</span>
-            <textarea
-              v-model="variableValues[v]"
-              class="var-input"
-              :aria-label="`Variable ${v}`"
-              :placeholder="`{{${v}}}`"
-              rows="2"
-              spellcheck="false"
-            />
-          </template>
-        </div>
-      </div>
+      <VariablesPanel :detected-vars="detectedVars" />
 
       <!-- Advanced settings (collapsible, hidden by default) -->
       <div class="field-block">
@@ -445,22 +431,6 @@ function copy(output: SandboxRunResult | null) {
   resize: vertical;
 }
 .config-textarea:focus { outline: none; border-color: #aaa; }
-
-.var-grid { display: grid; grid-template-columns: 100px 1fr; gap: 6px 10px; align-items: center; }
-.var-name { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); }
-.var-input {
-  width: 100%;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--text-primary);
-  font-size: 12px;
-  font-family: inherit;
-  padding: 4px 8px;
-  line-height: 1.5;
-  resize: vertical;
-}
-.var-input:focus { outline: none; border-color: #aaa; }
 
 .params-row { display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
 

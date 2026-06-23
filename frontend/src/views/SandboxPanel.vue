@@ -12,6 +12,7 @@ import {
 } from '../store/testCases';
 import TestCaseControls from '../components/TestCaseControls.vue';
 import ResultActions from '../components/ResultActions.vue';
+import VariablesPanel from '../components/VariablesPanel.vue';
 import { extractVariables, missingVariables, substituteVariables } from '../utils/variables';
 import { captureEvaluationContext, completeEvaluation } from '../utils/evaluations';
 
@@ -111,22 +112,7 @@ const renderedOutput = computed(() =>
       </div>
 
       <!-- Variables (shared state with LeftPanel) -->
-      <div v-if="detectedVars.length > 0" class="field-block">
-        <label class="field-label">Variables</label>
-        <div class="var-grid">
-          <template v-for="varName in detectedVars" :key="varName">
-            <span class="var-name">{{ varName }}</span>
-            <textarea
-              v-model="variableValues[varName]"
-              class="var-input"
-              :aria-label="`Variable ${varName}`"
-              :placeholder="`{{${varName}}}`"
-              rows="2"
-              spellcheck="false"
-            />
-          </template>
-        </div>
-      </div>
+      <VariablesPanel :detected-vars="detectedVars" />
 
       <!-- Sliders & inputs -->
       <div class="param-grid">
@@ -265,23 +251,6 @@ const renderedOutput = computed(() =>
   display: inline-block;
 }
 .collapse-chevron.open { transform: rotate(90deg); }
-
-/* Variables */
-.var-grid { display: grid; grid-template-columns: 100px 1fr; gap: 6px 10px; align-items: center; }
-.var-name { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); }
-.var-input {
-  width: 100%;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--text-primary);
-  font-size: 12px;
-  font-family: inherit;
-  padding: 4px 8px;
-  line-height: 1.5;
-  resize: vertical;
-}
-.var-input:focus { outline: none; border-color: #aaa; }
 
 /* Params */
 .param-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; }
