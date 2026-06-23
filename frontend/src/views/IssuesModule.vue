@@ -57,7 +57,6 @@ async function createManualIssue() {
     issues.value.unshift(issue);
     showNew.value = false;
     filter.value = 'open';
-    activeIssueId.value = issue.id;
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Could not create issue';
   }

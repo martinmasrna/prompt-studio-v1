@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { api, type EvaluationInput } from '../api';
-import { openIssue as openIssueInTab } from '../store/editor';
 
 const props = defineProps<{
   evaluation: EvaluationInput;
@@ -54,7 +53,6 @@ async function createIssue() {
     if (issue.evaluation_id) emit('saved', issue.evaluation_id);
     showIssue.value = false;
     emit('issueCreated');
-    openIssueInTab(issue.id);
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Could not create issue';
   } finally {

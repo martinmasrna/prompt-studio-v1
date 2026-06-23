@@ -147,7 +147,6 @@ async function submitFlag() {
     });
     evaluation.issue_id = issue.id;
     flagFor.value = null;
-    openIssue(issue.id);
   } catch (cause) {
     flagError.value = cause instanceof Error ? cause.message : 'Could not create issue';
   } finally {
