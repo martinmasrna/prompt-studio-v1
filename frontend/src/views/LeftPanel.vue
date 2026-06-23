@@ -9,6 +9,7 @@ import {
 } from '../store/editor';
 import { useAppState } from '../store/app';
 import { extractVariables } from '../utils/variables';
+import PromptEditor from '../components/PromptEditor.vue';
 
 const { prompts } = useAppState();
 
@@ -174,15 +175,7 @@ async function deleteVersion(versionId: number, name: string) {
           <span v-if="isDirty" class="unsaved-dot" title="Unsaved changes">• unsaved</span>
         </span>
       </div>
-      <textarea
-        v-model="localText"
-        class="prompt-textarea"
-        aria-label="Prompt text"
-        rows="20"
-        spellcheck="false"
-        @keydown.ctrl.s.prevent="saveChanges"
-        @keydown.meta.s.prevent="saveChanges"
-      />
+      <PromptEditor v-model="localText" @save="saveChanges" />
     </div>
 
     <!-- Version history -->
@@ -330,21 +323,6 @@ async function deleteVersion(versionId: number, name: string) {
 .editing-target strong { color: var(--text-secondary); font-weight: 600; }
 
 .unsaved-dot { color: #c79a3a; margin-left: 8px; }
-
-.prompt-textarea {
-  width: 100%;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--text-primary);
-  font-family: var(--font-mono);
-  font-size: 13px;
-  line-height: 1.65;
-  padding: 14px 16px;
-  resize: vertical;
-  min-height: 360px;
-}
-.prompt-textarea:focus { outline: none; border-color: #aaa; }
 
 /* ── Version history ── */
 .version-history { display: flex; flex-direction: column; gap: 10px; }
