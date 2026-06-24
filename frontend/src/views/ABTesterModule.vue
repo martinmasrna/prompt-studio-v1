@@ -171,9 +171,6 @@ const renderedB = computed(() =>
   outputB.value?.text ? renderContent(outputB.value.text) : ''
 );
 
-function copy(output: SandboxRunResult | null) {
-  if (output?.text) navigator.clipboard.writeText(output.text);
-}
 </script>
 
 <template>
@@ -284,13 +281,15 @@ function copy(output: SandboxRunResult | null) {
             <div v-if="outputA.text" class="output-text" v-html="renderedA" />
             <p v-else class="output-empty">(empty response)</p>
             <div class="output-meta">
-              <span v-if="outputA.tokens_used != null" class="meta-chip">{{ outputA.tokens_used }} tokens</span>
-              <span class="meta-chip">{{ outputA.latency_ms }} ms</span>
-              <button class="btn-sm" style="margin-left: auto" @click="copy(outputA)">Copy</button>
+              <div class="meta-stats">
+                <span v-if="outputA.tokens_used != null" class="meta-chip">{{ outputA.tokens_used }} tokens</span>
+                <span class="meta-chip">{{ outputA.latency_ms }} ms</span>
+              </div>
               <ResultActions
                 v-if="evaluationA"
                 :evaluation="evaluationA"
                 :saved-id="savedA"
+                :copy-text="outputA.text"
                 @saved="savedA = $event"
               />
             </div>
@@ -329,13 +328,15 @@ function copy(output: SandboxRunResult | null) {
             <div v-if="outputB.text" class="output-text" v-html="renderedB" />
             <p v-else class="output-empty">(empty response)</p>
             <div class="output-meta">
-              <span v-if="outputB.tokens_used != null" class="meta-chip">{{ outputB.tokens_used }} tokens</span>
-              <span class="meta-chip">{{ outputB.latency_ms }} ms</span>
-              <button class="btn-sm" style="margin-left: auto" @click="copy(outputB)">Copy</button>
+              <div class="meta-stats">
+                <span v-if="outputB.tokens_used != null" class="meta-chip">{{ outputB.tokens_used }} tokens</span>
+                <span class="meta-chip">{{ outputB.latency_ms }} ms</span>
+              </div>
               <ResultActions
                 v-if="evaluationB"
                 :evaluation="evaluationB"
                 :saved-id="savedB"
+                :copy-text="outputB.text"
                 @saved="savedB = $event"
               />
             </div>
@@ -682,11 +683,13 @@ function copy(output: SandboxRunResult | null) {
 .output-meta {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
   margin-top: 16px;
   padding-top: 12px;
   border-top: 1px solid var(--border);
 }
+.meta-stats { display: flex; align-items: center; gap: 8px; }
 .meta-chip {
   padding: 2px 8px;
   background: var(--bg-selected);
@@ -695,17 +698,6 @@ function copy(output: SandboxRunResult | null) {
   color: var(--text-muted);
   font-family: var(--font-mono);
 }
-.btn-sm {
-  padding: 3px 10px;
-  background: none;
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  color: var(--text-muted);
-  font-size: 11px;
-  font-family: inherit;
-  cursor: pointer;
-}
-.btn-sm:hover { color: var(--text-primary); border-color: #aaa; }
 
 /* Spinner */
 @keyframes ab-spin { to { transform: rotate(360deg); } }

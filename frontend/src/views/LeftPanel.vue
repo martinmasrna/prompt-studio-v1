@@ -5,7 +5,7 @@ import { ref, computed, watch } from 'vue';
 import { api } from '../api';
 import {
   activePromptData, activeVersionId, activeVersionText,
-  versions, variableValues, showSaveModal,
+  versions, variableValues, showSaveModal, newVersionDraftText,
 } from '../store/editor';
 import { useAppState } from '../store/app';
 import { extractVariables } from '../utils/variables';
@@ -14,8 +14,7 @@ import PromptEditor from '../components/PromptEditor.vue';
 const { prompts } = useAppState();
 
 // ── Local editable copies of metadata ─────────────────────────────────────────
-const localName     = ref('');
-const localDescription = ref('');
+const localName = ref('');
 
 // ── Editable prompt text ───────────────────────────────────────────────────────
 // Local copy — user edits here but changes don't persist until "Save as new version"
@@ -26,18 +25,47 @@ watch(activeVersionText, t => { localText.value = t; }, { immediate: true });
 // ── Sync local fields from store when prompt changes ──────────────────────────
 watch(activePromptData, data => {
   if (!data) return;
-  localName.value        = data.name;
-  localDescription.value = data.description ?? '';
+  localName.value = data.name;
 }, { immediate: true });
 
 // ── Dirty state ────────────────────────────────────────────────────────────────
 // True when the editor text differs from the saved text of the selected version.
 const isDirty = computed(() => localText.value !== activeVersionText.value);
 
-// Name of the version the editor is currently bound to (what "Save changes" targets).
-const currentVersionName = computed(() =>
-  versions.value.find(v => v.id === activeVersionId.value)?.name ?? null
-);
+// ── Versions UI ────────────────────────────────────────────────────────────────
+// The header dropdown switches the active version; the "Versions" popover holds
+// the heavier management (rename, notes, delete) and "Save as new version".
+const versionsOpen = ref(false);
+const versionActionMenuId = ref<number | null>(null);
+
+const activeVersion = computed(() => (
+  versions.value.find(v => v.id === activeVersionId.value) ?? versions.value[0] ?? null
+));
+
+function openNewVersionWizard() {
+  newVersionDraftText.value = localText.value;
+  showSaveModal.value = true;
+  versionsOpen.value = false;
+  versionActionMenuId.value = null;
+}
+
+function toggleVersionActions(versionId: number) {
+  versionActionMenuId.value = versionActionMenuId.value === versionId ? null : versionId;
+}
+
+function startRename(versionId: number, name: string) {
+  editingNameId.value = versionId;
+  nameBuffer.value = name;
+  editingNoteId.value = null;
+  versionActionMenuId.value = null;
+}
+
+function startEditDescription(versionId: number, note: string | null) {
+  editingNoteId.value = versionId;
+  noteBuffer.value = note ?? '';
+  editingNameId.value = null;
+  versionActionMenuId.value = null;
+}
 
 // ── Variables ─────────────────────────────────────────────────────────────────
 const detectedVars = computed(() => extractVariables(localText.value));
@@ -59,20 +87,13 @@ async function saveName() {
   if (p) p.name = localName.value;
 }
 
-async function saveMeta() {
-  if (!activePromptData.value) return;
-  await api.prompts.patch(activePromptData.value.id, {
-    description: localDescription.value || null,
-  });
-  activePromptData.value = {
-    ...activePromptData.value,
-    description: localDescription.value || null,
-  };
-}
-
 // ── Version history ────────────────────────────────────────────────────────────
 async function selectVersion(versionId: number) {
-  if (versionId === activeVersionId.value) return;
+  if (versionId === activeVersionId.value) {
+    versionsOpen.value = false;
+    versionActionMenuId.value = null;
+    return;
+  }
   const v = versions.value.find(v => v.id === versionId);
   if (!v) return;
   // Guard against silently discarding unsaved edits when switching versions.
@@ -83,6 +104,9 @@ async function selectVersion(versionId: number) {
   activeVersionText.value = v.text;
   localText.value = v.text;
   await api.versions.setCurrent(versionId);
+  for (const item of versions.value) item.is_current = item.id === versionId ? 1 : 0;
+  versionsOpen.value = false;
+  versionActionMenuId.value = null;
 }
 
 // Inline name editing
@@ -130,6 +154,7 @@ async function saveChanges() {
 
 // ── Delete a version ─────────────────────────────────────────────────────────
 async function deleteVersion(versionId: number, name: string) {
+  versionActionMenuId.value = null;
   if (!confirm(`Delete version "${name}"? This cannot be undone.`)) return;
   try {
     await api.versions.delete(versionId);
@@ -151,97 +176,129 @@ async function deleteVersion(versionId: number, name: string) {
 
 <template>
   <div class="left-panel" v-if="activePromptData">
-    <!-- Prompt name -->
-    <input
-      class="prompt-name"
-      v-model="localName"
-      @blur="saveName"
-      @keydown.enter="($event.target as HTMLInputElement).blur()"
-    />
+    <div class="workspace-title-row">
+      <input
+        class="workspace-title-input"
+        v-model="localName"
+        @blur="saveName"
+        @keydown.enter="($event.target as HTMLInputElement).blur()"
+      />
 
-    <!-- Description -->
-    <div class="field">
-      <label class="field-label">Description</label>
-      <input v-model="localDescription" class="field-input" placeholder="What is this prompt for?" @blur="saveMeta" />
+      <div class="workspace-title-actions">
+        <span v-if="isDirty" class="workspace-status dirty" title="Unsaved changes">
+          <span class="workspace-status-dot" />
+          Unsaved
+        </span>
+
+        <div class="versions-menu">
+          <button
+            class="workspace-switcher"
+            :class="{ open: versionsOpen }"
+            aria-haspopup="menu"
+            :aria-expanded="versionsOpen"
+            @click="versionsOpen = !versionsOpen"
+          >
+            <span class="workspace-switcher-label">
+              {{ activeVersion?.name ?? 'No version' }}{{ activeVersion?.is_current ? ' · current' : '' }}
+            </span>
+            <svg class="chevron" width="10" height="10" viewBox="0 0 12 12" fill="none">
+              <path d="M2 4.5L6 8.5L10 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+
+          <div
+            v-if="versionsOpen"
+            class="popover-backdrop"
+            @click="versionsOpen = false; versionActionMenuId = null"
+          />
+
+          <div v-if="versionsOpen" class="versions-popover" role="menu">
+            <button class="new-version-row" role="menuitem" @click="openNewVersionWizard">
+              <span class="new-version-plus">+</span>
+              <span>New version</span>
+            </button>
+
+            <div class="version-list">
+              <div
+                v-for="v in versions"
+                :key="v.id"
+                class="version-row"
+                :class="{ current: v.id === activeVersionId }"
+                @click="selectVersion(v.id)"
+              >
+                <div class="ver-main">
+                  <span
+                    v-if="editingNameId !== v.id"
+                    class="ver-label"
+                  >{{ v.name }}</span>
+                  <input
+                    v-else
+                    class="ver-label-input"
+                    v-model="nameBuffer"
+                    @blur="saveVersionName(v.id)"
+                    @keydown.enter="saveVersionName(v.id)"
+                    @keydown.esc="editingNameId = null"
+                    @click.stop
+                    autofocus
+                  />
+
+                  <span
+                    v-if="editingNoteId !== v.id"
+                    class="ver-note"
+                  >
+                    {{ v.note || 'No description' }}
+                  </span>
+                  <input
+                    v-else
+                    class="ver-note-input"
+                    v-model="noteBuffer"
+                    @blur="saveNote(v.id)"
+                    @keydown.enter="saveNote(v.id)"
+                    @keydown.esc="editingNoteId = null"
+                    @click.stop
+                    autofocus
+                  />
+                </div>
+
+                <span v-if="v.id === activeVersionId" class="ver-current">Current</span>
+
+                <div class="version-actions">
+                  <button
+                    class="ver-kebab"
+                    aria-label="Version actions"
+                    aria-haspopup="menu"
+                    :aria-expanded="versionActionMenuId === v.id"
+                    @click.stop="toggleVersionActions(v.id)"
+                  >⋮</button>
+
+                  <template v-if="versionActionMenuId === v.id">
+                    <div class="action-backdrop" @click.stop="versionActionMenuId = null" />
+                    <div class="action-menu" role="menu" @click.stop>
+                      <button role="menuitem" @click="startRename(v.id, v.name)">Rename</button>
+                      <button role="menuitem" @click="startEditDescription(v.id, v.note)">Edit description</button>
+                      <button
+                        role="menuitem"
+                        class="danger"
+                        :disabled="versions.length <= 1"
+                        :title="versions.length <= 1 ? 'A prompt must keep at least one version' : 'Delete version'"
+                        @click="deleteVersion(v.id, v.name)"
+                      >Delete</button>
+                    </div>
+                  </template>
+                </div>
+              </div>
+            </div>
+        </div>
+      </div>
     </div>
-
+    </div>
 
     <!-- Prompt text -->
     <div class="prompt-text-section">
       <div class="prompt-text-header">
         <p class="section-label">Prompt text</p>
-        <span v-if="currentVersionName" class="editing-target">
-          Editing: <strong>{{ currentVersionName }}</strong>
-          <span v-if="isDirty" class="unsaved-dot" title="Unsaved changes">• unsaved</span>
-        </span>
       </div>
       <PromptEditor v-model="localText" @save="saveChanges" />
-    </div>
-
-    <!-- Version history -->
-    <div class="version-history">
-      <p class="section-label">Version history</p>
-      <div class="version-list">
-        <div
-          v-for="v in versions"
-          :key="v.id"
-          class="version-row"
-          :class="{ current: v.id === activeVersionId }"
-          @click="selectVersion(v.id)"
-        >
-          <span
-            v-if="editingNameId !== v.id"
-            class="ver-label"
-            title="Double-click to rename"
-            @dblclick.stop="editingNameId = v.id; nameBuffer = v.name"
-          >{{ v.name }}</span>
-          <input
-            v-else
-            class="ver-label-input"
-            v-model="nameBuffer"
-            @blur="saveVersionName(v.id)"
-            @keydown.enter="saveVersionName(v.id)"
-            @keydown.esc="editingNameId = null"
-            @click.stop
-            autofocus
-          />
-
-
-          <!-- Note: inline editable -->
-          <span
-            v-if="editingNoteId !== v.id"
-            class="ver-note"
-            @click.stop="editingNoteId = v.id; noteBuffer = v.note ?? ''"
-          >
-            {{ v.note || '—' }}
-          </span>
-          <input
-            v-else
-            class="ver-note-input"
-            v-model="noteBuffer"
-            @blur="saveNote(v.id)"
-            @keydown.enter="saveNote(v.id)"
-            @keydown.esc="editingNoteId = null"
-            @click.stop
-            autofocus
-          />
-
-          <!-- Delete this version (disabled when it's the only one) -->
-          <button
-            class="ver-delete"
-            :disabled="versions.length <= 1"
-            :title="versions.length <= 1 ? 'A prompt must keep at least one version' : 'Delete version'"
-            @click.stop="deleteVersion(v.id, v.name)"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="3 6 5 6 21 6" />
-              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-              <path d="M10 11v6M14 11v6" />
-              <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-            </svg>
-          </button>
-        </div>
-      </div>
     </div>
 
     <!-- Action bar -->
@@ -252,7 +309,6 @@ async function deleteVersion(versionId: number, name: string) {
         @click="saveChanges"
         title="Save changes (Ctrl+S)"
       >{{ savingChanges ? 'Saving…' : 'Save changes' }}</button>
-      <button class="btn-action-secondary" @click="activeVersionText = localText; showSaveModal = true">Save as new version</button>
     </div>
   </div>
 </template>
@@ -261,10 +317,25 @@ async function deleteVersion(versionId: number, name: string) {
 .left-panel {
   display: flex;
   flex-direction: column;
-  gap: 24px;
-  padding: 32px 36px 0;
-  overflow-y: auto;
+  gap: 20px;
+  padding: 28px 36px 0;
+  overflow: hidden;
   height: 100%;
+}
+
+.prompt-title-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 20px;
+}
+
+.title-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  min-width: 0;
 }
 
 /* ── Name ── */
@@ -272,94 +343,128 @@ async function deleteVersion(versionId: number, name: string) {
   background: none;
   border: none;
   color: var(--text-primary);
-  font-size: 22px;
-  font-weight: 500;
-  letter-spacing: -0.02em;
+  font-size: 21px;
+  font-weight: 550;
+  letter-spacing: 0;
   width: 100%;
+  min-width: 0;
   padding: 0;
 }
 .prompt-name:focus { outline: none; }
 
-/* ── Description ── */
-.field { display: flex; flex-direction: column; gap: 6px; }
-
-.field-label { font-size: 10px; font-weight: 600; letter-spacing: 0.09em; text-transform: uppercase; color: var(--text-faint); }
-
-.field-input {
-  background: none;
-  border: none;
-  border-bottom: 1px solid #1e1e1e;
-  color: var(--text-secondary);
-  font-size: 13px;
-  font-family: inherit;
-  padding: 4px 0;
-}
-.field-input:focus { outline: none; border-color: #aaa; }
-
 .section-label {
   font-size: 10px;
   font-weight: 600;
-  letter-spacing: 0.09em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--text-faint);
+  color: var(--text-muted);
 }
 
 /* ── Prompt text ── */
-.prompt-text-section { display: flex; flex-direction: column; gap: 10px; }
+/* The editor is the one flexible region: it fills the space left over after the
+   fixed header / version history / action bar, and scrolls internally. This is
+   why the panel itself doesn't scroll — no second, parallel scrollbar. */
+.prompt-text-section { display: flex; flex-direction: column; gap: 10px; flex: 1; min-height: 0; }
 
 .prompt-text-header {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
+  align-items: center;
+  justify-content: flex-start;
   gap: 12px;
 }
 
-.editing-target {
-  font-size: 11px;
-  color: var(--text-faint);
+.unsaved-dot { color: #c79a3a; font-size: 11px; font-family: var(--font-mono); white-space: nowrap; }
+
+/* ── Version switcher ── */
+.version-switcher {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-secondary);
   font-family: var(--font-mono);
-  white-space: nowrap;
+  font-size: 12.5px;
+  min-height: 34px;
+  width: 280px;
+  max-width: min(36vw, 320px);
+  padding: 6px 11px;
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s;
 }
-.editing-target strong { color: var(--text-secondary); font-weight: 600; }
+.version-switcher:hover,
+.version-switcher.open,
+.version-switcher:focus { outline: none; color: var(--text-primary); border-color: #aaa; }
+.version-switcher-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.version-switcher .chevron { flex: 0 0 auto; transition: transform 0.15s; }
+.version-switcher.open .chevron { transform: rotate(180deg); }
 
-.unsaved-dot { color: #c79a3a; margin-left: 8px; }
+.versions-menu { position: relative; }
 
-/* ── Version history ── */
-.version-history { display: flex; flex-direction: column; gap: 10px; }
+/* Transparent catcher so a click anywhere outside closes the popover. */
+.popover-backdrop { position: fixed; inset: 0; z-index: 50; }
+
+.versions-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 51;
+  width: min(380px, calc(100vw - 32px));
+  max-height: 60vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+}
+
+.new-version-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 34px;
+  background: none;
+  border: none;
+  border-radius: 5px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-family: inherit;
+  padding: 7px 10px;
+  cursor: pointer;
+  text-align: left;
+}
+.new-version-row:hover { background: var(--bg-hover); color: var(--text-primary); }
+.new-version-plus { font-family: var(--font-mono); font-size: 15px; line-height: 1; }
 
 .version-list { display: flex; flex-direction: column; gap: 2px; }
 
 .version-row {
   display: grid;
-  grid-template-columns: 160px 1fr auto;
-  align-items: center;
-  gap: 12px;
-  padding: 7px 10px;
-  border-radius: 4px;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: start;
+  gap: 8px;
+  min-height: 44px;
+  padding: 7px 6px 7px 10px;
+  border-radius: 5px;
   cursor: pointer;
   transition: background 0.1s;
 }
 .version-row:hover { background: var(--bg-hover); }
 .version-row.current { background: var(--bg-selected); }
 
-/* Delete button — revealed on row hover */
-.ver-delete {
+.ver-main {
+  min-width: 0;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 2px;
-  background: none;
-  border: none;
-  border-radius: 4px;
-  color: var(--text-muted);
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.1s, color 0.1s;
+  flex-direction: column;
+  gap: 3px;
 }
-.version-row:hover .ver-delete { opacity: 1; }
-.ver-delete:hover:not(:disabled) { color: #c04040; }
-.ver-delete:disabled { opacity: 0.35; cursor: not-allowed; }
-.version-row:hover .ver-delete:disabled { opacity: 0.35; }
 
 .ver-label { font-size: 12px; font-weight: 600; color: var(--text-secondary); font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .version-row.current .ver-label { color: var(--text-white); }
@@ -376,7 +481,13 @@ async function deleteVersion(versionId: number, name: string) {
 }
 .ver-label-input:focus { outline: none; }
 
-.ver-note { font-size: 12px; color: var(--text-muted); cursor: text; }
+.ver-note {
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .ver-note-input {
   background: none;
   border: none;
@@ -388,27 +499,82 @@ async function deleteVersion(versionId: number, name: string) {
 }
 .ver-note-input:focus { outline: none; }
 
+.ver-current {
+  align-self: center;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+}
+
+.version-actions { position: relative; align-self: center; }
+
+.ver-kebab {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  color: var(--text-muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+.ver-kebab:hover,
+.ver-kebab[aria-expanded="true"] { background: var(--bg-hover); color: var(--text-primary); }
+
+.action-backdrop { position: fixed; inset: 0; z-index: 52; }
+.action-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 53;
+  min-width: 150px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  box-shadow: 0 8px 24px rgba(0,0,0,.14);
+  display: flex;
+  flex-direction: column;
+}
+.action-menu button {
+  padding: 7px 10px;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.action-menu button:hover:not(:disabled) { background: var(--bg-selected); color: var(--text-primary); }
+.action-menu button.danger { color: #b33; }
+.action-menu button.danger:hover:not(:disabled) { background: #fdeaea; }
+.action-menu button:disabled { opacity: 0.4; cursor: not-allowed; }
+
 /* ── Action bar ── */
-/* Sticky to the bottom of the scrolling panel so Save is always reachable.
-   Negative horizontal margins + matching padding let it span the panel's full
-   width; the solid background keeps scrolled content from showing through. */
+/* Pinned to the bottom of the non-scrolling panel. */
 .action-bar {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 8px;
   position: sticky;
   bottom: 0;
   margin: 0 -36px;
-  padding: 12px 36px;
+  padding: 7px 36px 18px;
   background: var(--bg);
-  border-top: 1px solid var(--border);
 }
 
 .btn-action-primary {
+  min-height: 34px;
   padding: 6px 14px;
   background: #1a1a1a;
   border: none;
-  border-radius: 4px;
+  border-radius: 5px;
   color: #ffffff;
   font-size: 13px;
   font-family: inherit;
@@ -418,16 +584,25 @@ async function deleteVersion(versionId: number, name: string) {
 .btn-action-primary:hover:not(:disabled) { background: #333; }
 .btn-action-primary:disabled { opacity: 0.4; cursor: not-allowed; }
 
-.btn-action-secondary {
-  padding: 6px 14px;
-  background: none;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--text-secondary);
-  font-size: 13px;
-  font-family: inherit;
-  cursor: pointer;
-  transition: color 0.12s, border-color 0.12s;
+@media (max-width: 760px) {
+  .prompt-title-row {
+    grid-template-columns: 1fr;
+    align-items: start;
+    gap: 12px;
+  }
+
+  .title-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .version-switcher {
+    width: min(320px, 100%);
+    max-width: none;
+  }
+
+  .versions-menu {
+    min-width: 0;
+  }
 }
-.btn-action-secondary:hover { color: var(--text-primary); border-color: #aaa; }
 </style>

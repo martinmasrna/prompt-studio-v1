@@ -5,6 +5,7 @@ import { api, type EvaluationInput } from '../api';
 const props = defineProps<{
   evaluation: EvaluationInput;
   savedId: number | null;
+  copyText: string;
 }>();
 const emit = defineEmits<{
   saved: [id: number];
@@ -16,6 +17,17 @@ const showIssue = ref(false);
 const title = ref('');
 const note = ref('');
 const error = ref<string | null>(null);
+
+// Copy gives no other feedback, so the icon briefly swaps to a checkmark.
+const copied = ref(false);
+let copyTimer: ReturnType<typeof setTimeout> | undefined;
+function copy() {
+  if (!props.copyText) return;
+  navigator.clipboard.writeText(props.copyText);
+  copied.value = true;
+  clearTimeout(copyTimer);
+  copyTimer = setTimeout(() => (copied.value = false), 1500);
+}
 
 async function saveResult() {
   if (props.savedId || saving.value) return;
@@ -63,11 +75,37 @@ async function createIssue() {
 
 <template>
   <div class="result-actions">
-    <span v-if="savedId" class="saved-label">Saved</span>
-    <button v-else class="result-btn" :disabled="saving" @click="saveResult">
-      {{ saving ? 'Saving…' : 'Save result' }}
+    <!-- Copy output -->
+    <button class="icon-btn" :class="{ done: copied }" :title="copied ? 'Copied' : 'Copy output'" @click="copy">
+      <svg v-if="copied" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20 6L9 17l-5-5"/>
+      </svg>
+      <svg v-else width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="9" y="9" width="13" height="13" rx="2"/>
+        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+      </svg>
     </button>
-    <button class="result-btn issue" :disabled="saving" @click="openIssue">Flag as issue</button>
+
+    <!-- Save result -->
+    <button
+      class="icon-btn"
+      :class="{ saved: savedId }"
+      :disabled="saving || !!savedId"
+      :title="savedId ? 'Saved' : (saving ? 'Saving…' : 'Save result')"
+      @click="saveResult"
+    >
+      <svg width="15" height="15" viewBox="0 0 24 24" :fill="savedId ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
+      </svg>
+    </button>
+
+    <!-- Flag as issue -->
+    <button class="icon-btn issue" :disabled="saving" title="Flag as issue" @click="openIssue">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/>
+        <line x1="4" y1="22" x2="4" y2="15"/>
+      </svg>
+    </button>
   </div>
   <p v-if="error && !showIssue" class="action-error">{{ error }}</p>
 
@@ -96,13 +134,33 @@ async function createIssue() {
 </template>
 
 <style scoped>
-.result-actions { display: flex; align-items: center; gap: 7px; margin-left: auto; }
+.result-actions { display: flex; align-items: center; gap: 2px; }
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 5px;
+  color: var(--text-faint);
+  cursor: pointer;
+  transition: color .12s, background .12s;
+}
+.icon-btn:hover:not(:disabled) { color: var(--text-primary); background: var(--bg-hover); }
+.icon-btn:disabled { cursor: default; }
+.icon-btn.done { color: #4f7a52; }
+.icon-btn.saved { color: #4f7a52; }
+/* Flag keeps an amber tint at rest so it reads as the heavier action. */
+.icon-btn.issue { color: #b88a55; }
+.icon-btn.issue:hover:not(:disabled) { color: #9a5a20; }
+/* Modal "Create issue" button retains the labelled-button styling. */
 .result-btn { padding: 4px 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text-muted); font: inherit; font-size: 11px; cursor: pointer; }
 .result-btn:hover:not(:disabled) { color: var(--text-primary); border-color: #aaa; }
 .result-btn:disabled { opacity: .5; cursor: default; }
-.result-btn.issue { color: #9a5a20; }
 .result-btn.primary { background: #1a1a1a; color: #fff; border-color: #1a1a1a; }
-.saved-label { color: #4f7a52; font-size: 11px; }
 .action-error { margin-top: 6px; color: #c04040; font-size: 11px; }
 .overlay { position: fixed; inset: 0; z-index: 1200; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.55); }
 .modal { width: min(480px, 90vw); display: flex; flex-direction: column; gap: 16px; padding: 22px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); box-shadow: 0 20px 60px rgba(0,0,0,.25); }

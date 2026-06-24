@@ -24,7 +24,6 @@ test('prompt and version API', async t => {
 
     const detail = await requestJson<{
       name: string;
-      description: string | null;
       current_version: Version;
     }>(server.baseUrl, `/api/prompts/${created.body.id}`);
     assert.equal(detail.body.name, 'Summarizer');
@@ -39,7 +38,7 @@ test('prompt and version API', async t => {
     assert.equal(count.count, 1);
   });
 
-  await t.test('updates prompt metadata', async () => {
+  await t.test('renames a prompt', async () => {
     const created = await requestJson<{ id: number }>(
       server.baseUrl,
       '/api/prompts',
@@ -48,15 +47,14 @@ test('prompt and version API', async t => {
     const patched = await requestJson<{ ok: boolean }>(
       server.baseUrl,
       `/api/prompts/${created.body.id}`,
-      jsonRequest('PATCH', { name: 'After', description: 'Purpose' })
+      jsonRequest('PATCH', { name: 'After' })
     );
     assert.equal(patched.response.status, 200);
-    const detail = await requestJson<{ name: string; description: string }>(
+    const detail = await requestJson<{ name: string }>(
       server.baseUrl,
       `/api/prompts/${created.body.id}`
     );
     assert.equal(detail.body.name, 'After');
-    assert.equal(detail.body.description, 'Purpose');
   });
 
   await t.test('creates, switches, edits, and safely deletes versions', async () => {

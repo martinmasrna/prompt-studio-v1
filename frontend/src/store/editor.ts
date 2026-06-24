@@ -22,6 +22,7 @@ export const activeVersionId   = ref<number | null>(null);
 export const activeVersionText = ref<string>('');
 export const versions          = ref<VersionInfo[]>([]);
 export const activeIssueId     = ref<number | null>(null);
+export const newVersionDraftText = ref<string | null>(null);
 
 export function openIssue(issueId: number) {
   activeIssueId.value = issueId;
@@ -54,6 +55,7 @@ export function useEditorState() {
     activeVersionText,
     versions,
     activeIssueId,
+    newVersionDraftText,
     variableValues,
     sandboxOutput,
     outputLog,

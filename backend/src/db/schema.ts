@@ -1,8 +1,7 @@
 export const BASE_SCHEMA_SQL = `
   CREATE TABLE IF NOT EXISTS prompts (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    name        TEXT NOT NULL,
-    description TEXT
+    name        TEXT NOT NULL
   );
 
   CREATE TABLE IF NOT EXISTS versions (

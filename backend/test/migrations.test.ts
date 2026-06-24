@@ -29,7 +29,10 @@ test('fresh migrations are complete and idempotent', () => withDatabase(db => {
     { version: 4, name: 'add_issue_resolutions' },
     { version: 5, name: 'add_diagnosed_issue_status' },
     { version: 6, name: 'add_evaluation_note' },
+    { version: 7, name: 'drop_prompt_description' },
   ]);
+  const promptColumns = db.all('PRAGMA table_info(prompts)') as unknown as Array<{ name: string }>;
+  assert.ok(!promptColumns.some(column => column.name === 'description'));
   assert.ok(db.get("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'test_cases'"));
   assert.ok(db.get("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'evaluations'"));
   const issueColumns = db.all('PRAGMA table_info(issues)') as unknown as Array<{ name: string }>;
@@ -62,9 +65,12 @@ test('existing v1 data is preserved and duplicate current rows are repaired', ()
 
   runMigrations(db);
 
-  assert.deepEqual(db.get('SELECT id, name, description FROM prompts WHERE id = 7'), {
-    id: 7, name: 'kept', description: 'existing data',
+  // The prompt row survives; the description column is dropped (migration 7).
+  assert.deepEqual(db.get('SELECT id, name FROM prompts WHERE id = 7'), {
+    id: 7, name: 'kept',
   });
+  const promptColumns = db.all('PRAGMA table_info(prompts)') as unknown as Array<{ name: string }>;
+  assert.ok(!promptColumns.some(column => column.name === 'description'));
   assert.equal((db.get('SELECT COUNT(*) AS count FROM versions WHERE prompt_id = 7') as { count: number }).count, 2);
   assert.equal((db.get('SELECT COUNT(*) AS count FROM versions WHERE prompt_id = 7 AND is_current = 1') as { count: number }).count, 1);
   assert.throws(() => db.run(

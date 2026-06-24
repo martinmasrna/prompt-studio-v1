@@ -2,7 +2,7 @@
 // Root component. Bootstraps shared data and coordinates top-level layout.
 // When selectedPromptId changes, loads full prompt detail + version list into
 // the editor store so the sidebar, LeftPanel, and SandboxPanel all read from one source.
-import { ref, watch, onMounted } from 'vue';
+import { watch, onMounted } from 'vue';
 import { api } from './api';
 import { useAppState } from './store/app';
 import {
@@ -24,6 +24,9 @@ const { prompts, selectedPromptId } = useAppState();
 // Load sidebar data + available models on mount
 onMounted(async () => {
   prompts.value = await api.prompts.list();
+  if (prompts.value.length > 0 && !prompts.value.some(prompt => prompt.id === selectedPromptId.value)) {
+    selectedPromptId.value = prompts.value[0].id;
+  }
   loadModels();
 });
 
@@ -102,10 +105,10 @@ watch(selectedPromptId, async (id) => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 7px;
   user-select: none;
 }
 
-.empty-headline { font-size: 18px; font-weight: 400; color: var(--text-faint); letter-spacing: -0.01em; }
-.empty-sub      { font-size: 13px; color: var(--text-faint); opacity: 0.6; }
+.empty-headline { font-size: 18px; font-weight: 500; color: var(--text-secondary); letter-spacing: 0; }
+.empty-sub      { font-size: 13px; color: var(--text-muted); }
 </style>

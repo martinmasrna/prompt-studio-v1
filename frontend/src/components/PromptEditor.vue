@@ -26,8 +26,8 @@ let view: EditorView | null = null;
 // Markdown token styling — colour/weight only so glyph metrics never change.
 // Markers (#, **, `) map to processingInstruction and get dimmed, like VSCode.
 const promptHighlight = HighlightStyle.define([
-  { tag: tags.heading, fontWeight: '700', color: 'var(--text-primary)' },
-  { tag: tags.strong, fontWeight: '700', color: 'var(--text-primary)' },
+  { tag: tags.heading, fontWeight: '600', color: 'var(--text-primary)' },
+  { tag: tags.strong, fontWeight: '600', color: 'var(--text-primary)' },
   { tag: tags.emphasis, fontStyle: 'italic' },
   { tag: tags.strikethrough, textDecoration: 'line-through' },
   { tag: tags.monospace, color: '#9a5a20' },
@@ -60,12 +60,12 @@ const theme = EditorView.theme({
     color: 'var(--text-primary)',
     border: '1px solid var(--border)',
     borderRadius: '6px',
-    fontSize: '13px',
+    fontSize: '12.5px',
   },
-  '&.cm-editor': { minHeight: '360px', maxHeight: '60vh' },
+  '&.cm-editor': { height: '100%' },
   '&.cm-focused': { outline: 'none', borderColor: '#aaa' },
-  '.cm-scroller': { fontFamily: 'var(--font-mono)', lineHeight: '1.65', overflow: 'auto' },
-  '.cm-content': { padding: '14px 16px' },
+  '.cm-scroller': { fontFamily: 'var(--font-mono)', lineHeight: '1.58', overflow: 'auto' },
+  '.cm-content': { padding: '15px 18px' },
   '.cm-cursor': { borderLeftColor: 'var(--text-primary)' },
   '.cm-variable': {
     color: '#2c6e49',
@@ -125,5 +125,7 @@ watch(() => props.modelValue, value => {
 </template>
 
 <style scoped>
-.prompt-editor { width: 100%; }
+/* Fills the flex space the parent gives it; min-height:0 lets it shrink so its
+   own scroller — not the page — handles overflow. */
+.prompt-editor { width: 100%; flex: 1; min-height: 0; }
 </style>

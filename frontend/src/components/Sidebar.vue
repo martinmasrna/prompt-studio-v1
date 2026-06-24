@@ -76,17 +76,28 @@ async function deletePrompt(id: number, name: string) {
 
 <template>
   <aside class="sidebar" :class="{ collapsed }">
-    <!-- Collapse toggle -->
     <div class="sidebar-top">
+      <div v-if="!collapsed" class="sidebar-brand">Prompt Studio</div>
       <button
         class="collapse-btn"
         :title="collapsed ? 'Expand sidebar' : 'Collapse sidebar'"
         @click="collapsed = !collapsed"
       >
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polyline v-if="collapsed" points="9 18 15 12 9 6" />
-          <polyline v-else points="15 18 9 12 15 6" />
+          <rect x="3" y="4" width="18" height="16" rx="2" />
+          <line x1="9" y1="4" x2="9" y2="20" />
         </svg>
+      </button>
+    </div>
+
+    <div class="sidebar-header">
+      <button class="new-prompt-btn" :title="collapsed ? 'New prompt' : undefined" @click="openNewModal">
+        <span class="new-prompt-icon">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 5v14M5 12h14" />
+          </svg>
+        </span>
+        <span v-if="!collapsed">New prompt</span>
       </button>
     </div>
 
@@ -126,14 +137,8 @@ async function deletePrompt(id: number, name: string) {
       </a>
     </nav>
 
-    <div class="sidebar-header">
-      <button class="new-prompt-btn" :title="collapsed ? 'New Prompt' : undefined" @click="openNewModal">
-        <span class="icon">+</span>
-        <span v-if="!collapsed">New Prompt</span>
-      </button>
-    </div>
-
     <nav v-if="!collapsed" class="prompt-list">
+      <div class="prompt-list-title">Recents</div>
       <div
         v-for="prompt in prompts"
         :key="prompt.id"
@@ -206,7 +211,7 @@ async function deletePrompt(id: number, name: string) {
 
 <style scoped>
 .sidebar {
-  width: 210px;
+  width: 260px;
   flex-shrink: 0;
   height: 100vh;
   background: var(--bg-sunken);
@@ -222,11 +227,24 @@ async function deletePrompt(id: number, name: string) {
 /* ── Collapse toggle ── */
 .sidebar-top {
   display: flex;
-  justify-content: flex-end;
-  padding: 10px 12px 0;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 50px;
+  padding: 12px 14px 2px;
   flex-shrink: 0;
 }
-.sidebar.collapsed .sidebar-top { justify-content: center; padding: 10px 0 0; }
+.sidebar.collapsed .sidebar-top { justify-content: center; padding: 12px 0 2px; }
+
+.sidebar-brand {
+  min-width: 0;
+  color: var(--text-primary);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 .collapse-btn {
   display: flex;
@@ -237,7 +255,7 @@ async function deletePrompt(id: number, name: string) {
   background: none;
   border: none;
   border-radius: 5px;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   cursor: pointer;
   transition: background 0.12s, color 0.12s;
 }
@@ -248,31 +266,32 @@ async function deletePrompt(id: number, name: string) {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 12px 12px 0;
+  padding: 4px 12px 0;
   flex-shrink: 0;
 }
-.sidebar.collapsed .module-tabs { padding: 12px 0 0; align-items: center; }
+.sidebar.collapsed .module-tabs { padding: 4px 0 0; align-items: center; }
 
 .module-tab {
   display: flex;
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 7px 10px;
+  min-height: 36px;
+  padding: 8px 10px;
   background: none;
   border: none;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   font-size: 13px;
   font-family: inherit;
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: 5px;
   white-space: nowrap;
   text-align: left;
   text-decoration: none;
   transition: color 0.12s, background 0.12s;
 }
 
-.module-tab:hover  { color: var(--text-secondary); background: var(--bg-hover); }
+.module-tab:hover  { color: var(--text-primary); background: var(--bg-hover); }
 .module-tab.active { color: var(--text-white); background: var(--bg-selected); }
 
 .module-tab-icon { display: flex; align-items: center; flex-shrink: 0; }
@@ -285,11 +304,11 @@ async function deletePrompt(id: number, name: string) {
 }
 
 .sidebar-header {
-  padding: 16px 12px 12px;
+  padding: 12px 12px 6px;
   flex-shrink: 0;
 }
 .sidebar.collapsed .sidebar-header {
-  padding: 12px 0 8px;
+  padding: 10px 0 6px;
   display: flex;
   justify-content: center;
 }
@@ -299,11 +318,12 @@ async function deletePrompt(id: number, name: string) {
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 7px 10px;
+  min-height: 36px;
+  padding: 8px 10px;
   background: none;
   border: none;
   border-radius: 5px;
-  color: var(--text-muted);
+  color: var(--text-primary);
   font-size: 13px;
   cursor: pointer;
   text-align: left;
@@ -325,16 +345,12 @@ async function deletePrompt(id: number, name: string) {
   padding: 0;
 }
 
-.icon {
-  font-size: 16px;
-  line-height: 1;
-  color: var(--text-faint);
-}
+.new-prompt-icon { display: flex; align-items: center; flex-shrink: 0; color: var(--text-secondary); }
 
 .prompt-list {
   flex: 1;
   overflow-y: auto;
-  padding: 4px 12px 20px;
+  padding: 14px 12px 20px;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -344,16 +360,25 @@ async function deletePrompt(id: number, name: string) {
   scrollbar-color: var(--border) transparent;
 }
 
+.prompt-list-title {
+  padding: 0 2px 7px;
+  color: var(--text-primary);
+  font-size: 12.5px;
+  font-weight: 650;
+  line-height: 1.2;
+}
+
 .prompt-item-root {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 10px;
+  min-height: 34px;
+  padding: 7px 10px;
   width: 100%;
   color: var(--text-secondary);
   font-size: 13.5px;
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: 5px;
   transition: background 0.1s, color 0.1s;
 }
 
@@ -384,7 +409,7 @@ async function deletePrompt(id: number, name: string) {
   padding: 2px;
   background: none;
   border: none;
-  border-radius: 4px;
+  border-radius: 5px;
   color: var(--text-muted);
   cursor: pointer;
   opacity: 0;
@@ -396,6 +421,7 @@ async function deletePrompt(id: number, name: string) {
 /* ── Settings footer ── */
 .sidebar-footer {
   flex-shrink: 0;
+  margin-top: auto;
   padding: 8px 12px 12px;
   border-top: 1px solid var(--border);
 }
@@ -414,7 +440,7 @@ async function deletePrompt(id: number, name: string) {
   background: none;
   border: none;
   border-radius: 5px;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   font-family: inherit;
   cursor: pointer;
   text-align: left;
@@ -436,7 +462,7 @@ async function deletePrompt(id: number, name: string) {
 .settings-title { font-size: 13px; }
 .settings-model {
   font-size: 10.5px;
-  color: var(--text-faint);
+  color: var(--text-muted);
   font-family: var(--font-mono);
   white-space: nowrap;
   overflow: hidden;

@@ -17,7 +17,6 @@ export interface VersionInfo {
 export interface PromptDetail {
   id: number;
   name: string;
-  description: string | null;
   current_version: {
     id: number;
     name: string;
@@ -147,7 +146,7 @@ export const api = {
     get:  (id: number) => apiFetch<PromptDetail>(`/api/prompts/${id}`),
     create: (name: string) =>
       apiFetch<{ id: number }>('/api/prompts', { method: 'POST', ...json({ name }) }),
-    patch: (id: number, data: Partial<{ name: string; description: string | null }>) =>
+    patch: (id: number, data: Partial<{ name: string }>) =>
       apiFetch<{ ok: boolean }>(`/api/prompts/${id}`, { method: 'PATCH', ...json(data) }),
     delete: (id: number) =>
       apiFetch<{ ok: boolean }>(`/api/prompts/${id}`, { method: 'DELETE' }),

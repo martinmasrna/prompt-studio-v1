@@ -30,7 +30,12 @@
       "Bash(/c/nvm4w/nodejs/npm.cmd test *)",
       "Bash(/c/nvm4w/nodejs/npx.cmd vue-tsc *)",
       "Bash(echo \"frontend vue-tsc exit: $?\")",
-      "Bash(echo \"vue-tsc exit: $?\")"
+      "Bash(echo \"vue-tsc exit: $?\")",
+      "Bash(grep -vE '\\\\.\\(png|svg|ico\\)$')",
+      "Bash(\"C:/nvm4w/nodejs/npx.cmd\" vue-tsc *)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(npm run *)",
+      "Bash(npm test *)"
     ]
   }
 }

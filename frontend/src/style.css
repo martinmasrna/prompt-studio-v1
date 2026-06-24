@@ -12,9 +12,9 @@
   --border:        #e8e8e8;
 
   --text-primary:  #1a1a1a;
-  --text-secondary:#606060;
-  --text-muted:    #a8a8a8;
-  --text-faint:    #d0d0d0;
+  --text-secondary:#555555;
+  --text-muted:    #777777;
+  --text-faint:    #a6a6a6;
   --text-white:    #1a1a1a;
 
   --font-sans: system-ui, -apple-system, 'Segoe UI', sans-serif;
@@ -31,6 +31,119 @@ body {
 
 button {
   font-family: inherit;
+}
+
+.workspace-title-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 20px;
+}
+
+.workspace-title,
+.workspace-title-input {
+  color: var(--text-primary);
+  font-size: 21px;
+  font-weight: 550;
+  letter-spacing: 0;
+  line-height: 1.2;
+}
+
+.workspace-title {
+  margin: 0;
+}
+
+.workspace-title-input {
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  background: none;
+  border: none;
+}
+.workspace-title-input:focus { outline: none; }
+
+.workspace-title-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  min-width: 0;
+}
+
+.workspace-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+.workspace-status.dirty { color: #9a6a18; }
+
+.workspace-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #4f7a52;
+  flex: 0 0 auto;
+}
+.workspace-status.dirty .workspace-status-dot { background: #d6a13a; }
+
+.workspace-switcher {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 34px;
+  width: 280px;
+  max-width: min(36vw, 320px);
+  padding: 6px 11px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s;
+}
+.workspace-switcher:hover,
+.workspace-switcher.open,
+.workspace-switcher:focus {
+  outline: none;
+  color: var(--text-primary);
+  border-color: #aaa;
+}
+.workspace-switcher-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workspace-switcher .chevron {
+  flex: 0 0 auto;
+  transition: transform 0.15s;
+}
+.workspace-switcher.open .chevron { transform: rotate(180deg); }
+
+@media (max-width: 760px) {
+  .workspace-title-row {
+    grid-template-columns: 1fr;
+    align-items: start;
+    gap: 12px;
+  }
+
+  .workspace-title-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .workspace-switcher {
+    width: min(320px, 100%);
+    max-width: none;
+  }
 }
 
 #app {

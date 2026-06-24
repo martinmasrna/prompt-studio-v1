@@ -327,7 +327,7 @@ watch(() => activePromptData.value?.id, load, { immediate: true });
                 <summary>Execution snapshot</summary>
                 <pre>{{ evaluation.rendered_prompt_snapshot }}</pre>
               </details>
-              <ResultActions :evaluation="evaluation" :saved-id="evaluation.id" />
+              <ResultActions :evaluation="evaluation" :saved-id="evaluation.id" :copy-text="evaluation.response_text ?? ''" />
             </section>
           </div>
           <footer><button class="btn danger" @click="removeComparison(entry.value)">Delete comparison</button></footer>

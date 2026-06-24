@@ -61,9 +61,11 @@ function preview(value: string): string {
 <template>
   <div v-if="detectedVars.length" class="field-block">
     <label class="field-label">Variables</label>
-    <div class="var-grid">
-      <template v-for="name in detectedVars" :key="name">
-        <span class="var-name">{{ name }}</span>
+    <!-- Children are indented under the header so the grouping reads as
+         containment rather than another flat list of fields. -->
+    <div class="var-list">
+      <div v-for="name in detectedVars" :key="name" class="var-row">
+        <label class="var-name">{{ name }}</label>
         <div class="var-field">
           <textarea
             v-model="variableValues[name]"
@@ -85,7 +87,7 @@ function preview(value: string): string {
             </option>
           </select>
         </div>
-      </template>
+      </div>
     </div>
     <button v-if="orphans.length" class="cleanup-btn" @click="cleanup">
       Clean up {{ orphans.length }} unused value{{ orphans.length === 1 ? '' : 's' }}
@@ -99,37 +101,53 @@ function preview(value: string): string {
 .field-label {
   font-size: 10px;
   font-weight: 600;
-  letter-spacing: 0.09em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--text-faint);
+  color: var(--text-muted);
 }
 
-.var-grid { display: grid; grid-template-columns: 100px 1fr; gap: 6px 10px; align-items: start; }
-.var-name { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); padding-top: 6px; }
+.var-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-left: 12px;
+  border-left: 1px solid var(--border);
+}
+.var-row { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.var-name { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); }
 
 .var-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 
 .var-input {
   width: 100%;
   background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 4px;
+  border: 1px solid #ececec;
+  border-radius: 6px;
   color: var(--text-primary);
   font-size: 12px;
   font-family: inherit;
-  padding: 4px 8px;
-  line-height: 1.5;
+  min-height: 64px;
+  max-height: 320px;
+  padding: 8px 10px;
+  line-height: 1.45;
   resize: vertical;
+  overflow: auto;
+  transition: border-color 0.12s, box-shadow 0.12s, background 0.12s;
 }
-.var-input:focus { outline: none; border-color: #aaa; }
+.var-input:hover { border-color: #dddddd; }
+.var-input:focus {
+  outline: none;
+  border-color: #b8b8b8;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.035);
+}
 
 .fill-from {
   align-self: flex-start;
   max-width: 100%;
   background: var(--bg-sunken);
   border: 1px dashed var(--border);
-  border-radius: 4px;
-  color: var(--text-muted);
+  border-radius: 5px;
+  color: var(--text-secondary);
   font-size: 11px;
   font-family: inherit;
   padding: 2px 6px;
@@ -142,11 +160,12 @@ function preview(value: string): string {
   margin-top: 2px;
   background: none;
   border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--text-muted);
+  border-radius: 5px;
+  color: var(--text-secondary);
   font-size: 11px;
   font-family: inherit;
-  padding: 3px 9px;
+  min-height: 30px;
+  padding: 5px 9px;
   cursor: pointer;
 }
 .cleanup-btn:hover { color: var(--text-primary); border-color: #aaa; }

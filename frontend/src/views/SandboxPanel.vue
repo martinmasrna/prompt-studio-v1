@@ -9,6 +9,8 @@ import { activeVersionId, activeVersionText, variableValues, sandboxOutput, addS
 import { activeModelId } from '../store/settings';
 import {
   systemPrompt, temperature, topP, topK, maxTokens, enableThinking,
+  selectedTestCase, selectedTestCaseId, isTestDirty, testSaving, saveNewTest, saveSelectedTest,
+  deleteSelectedTest,
 } from '../store/testCases';
 import TestCaseControls from '../components/TestCaseControls.vue';
 import ResultActions from '../components/ResultActions.vue';
@@ -17,7 +19,7 @@ import { extractVariables, missingVariables, substituteVariables } from '../util
 import { captureEvaluationContext, completeEvaluation } from '../utils/evaluations';
 
 // ── Config state ───────────────────────────────────────────────────────────────
-const systemPromptOpen   = ref(false);
+const advancedOpen       = ref(false);
 
 // The user message sent to the LLM is always the active prompt text with variables substituted.
 const userMessage = computed(() => substituteVariables(activeVersionText.value, variableValues.value));
@@ -75,11 +77,6 @@ async function runLLM() {
   }
 }
 
-// ── Copy helpers ───────────────────────────────────────────────────────────────
-function copyOutput() {
-  if (sandboxOutput.value) navigator.clipboard.writeText(sandboxOutput.value.text);
-}
-
 function markSaved(id: number) {
   if (sandboxOutput.value) sandboxOutput.value.savedEvaluationId = id;
 }
@@ -88,68 +85,154 @@ const renderedOutput = computed(() =>
   sandboxOutput.value?.text ? renderContent(sandboxOutput.value.text) : ''
 );
 
+const hasSelectedTest = computed(() => selectedTestCaseId.value !== null);
+const canSaveTest = computed(() => hasSelectedTest.value && isTestDirty.value && !testSaving.value);
+const canDeleteTest = computed(() => hasSelectedTest.value && !testSaving.value);
+
+async function saveTest() {
+  try {
+    await saveSelectedTest();
+  } catch {
+    // The shared error message is rendered by TestCaseControls.
+  }
+}
+
+async function saveTestAsNew() {
+  const name = prompt('Name this test');
+  if (!name?.trim()) return;
+  try {
+    await saveNewTest(name);
+  } catch {
+    // The shared error message is rendered by TestCaseControls.
+  }
+}
+
+async function deleteTest() {
+  const selected = selectedTestCase.value;
+  if (!selected || !confirm(`Delete saved test "${selected.name}"?`)) return;
+  try {
+    await deleteSelectedTest();
+  } catch (error) {
+    alert(error instanceof Error ? error.message : 'Could not delete test');
+  }
+}
+
 </script>
 
 <template>
   <div class="sandbox-panel">
     <!-- ── Configuration ─────────────────────────────── -->
     <div class="config-section">
-      <TestCaseControls />
-
-      <div class="field-block">
-        <button class="collapsible-label" @click="systemPromptOpen = !systemPromptOpen">
-          <span class="field-label">System prompt</span>
-          <span class="collapse-chevron" :class="{ open: systemPromptOpen }">▶</span>
-        </button>
-        <textarea
-          v-if="systemPromptOpen"
-          v-model="systemPrompt"
-          class="config-textarea"
-          placeholder="Optional system instruction…"
-          rows="3"
-          spellcheck="false"
-        />
-      </div>
+      <TestCaseControls :show-actions="false" variant="header" />
 
       <!-- Variables (shared state with LeftPanel) -->
       <VariablesPanel :detected-vars="detectedVars" />
 
-      <!-- Sliders & inputs -->
-      <div class="param-grid">
-        <div class="param">
-          <label class="field-label">Temperature <span class="param-value">{{ temperature.toFixed(1) }}</span></label>
-          <input v-model.number="temperature" aria-label="Temperature" type="range" min="0" max="2" step="0.1" class="slider" />
-        </div>
-        <div class="param">
-          <label class="field-label">Top-P <span class="param-value">{{ topP.toFixed(2) }}</span></label>
-          <input v-model.number="topP" type="range" min="0" max="1" step="0.01" class="slider" />
-        </div>
-        <div class="param">
-          <label class="field-label">Top-K</label>
-          <input v-model.number="topK" type="number" min="1" max="200" class="num-input" />
-        </div>
-        <div class="param">
-          <label class="field-label">Max tokens</label>
-          <input v-model.number="maxTokens" type="number" min="64" max="32768" class="num-input" />
+      <!-- Advanced settings: system prompt, sampling params, thinking mode -->
+      <div class="field-block">
+        <button class="collapsible-label" @click="advancedOpen = !advancedOpen">
+          <span class="field-label">Advanced settings</span>
+          <span class="collapse-chevron" :class="{ open: advancedOpen }">▶</span>
+        </button>
+
+        <div v-if="advancedOpen" class="advanced-body">
+          <div class="field-block">
+            <label class="field-label">System prompt</label>
+            <textarea
+              v-model="systemPrompt"
+              class="config-textarea"
+              placeholder="Optional system instruction…"
+              rows="3"
+              spellcheck="false"
+            />
+          </div>
+
+          <!-- Sliders & inputs -->
+          <div class="param-grid">
+            <div class="param">
+              <label class="field-label">Temperature <span class="param-value">{{ temperature.toFixed(1) }}</span></label>
+              <input v-model.number="temperature" aria-label="Temperature" type="range" min="0" max="2" step="0.1" class="slider" />
+            </div>
+            <div class="param">
+              <label class="field-label">Top-P <span class="param-value">{{ topP.toFixed(2) }}</span></label>
+              <input v-model.number="topP" type="range" min="0" max="1" step="0.01" class="slider" />
+            </div>
+            <div class="param">
+              <label class="field-label">Top-K</label>
+              <input v-model.number="topK" type="number" min="1" max="200" class="num-input" />
+            </div>
+            <div class="param">
+              <label class="field-label">Max tokens</label>
+              <input v-model.number="maxTokens" type="number" min="64" max="32768" class="num-input" />
+            </div>
+          </div>
+
+          <label class="toggle-row">
+            <span class="toggle-label">Thinking mode</span>
+            <button
+              class="toggle-switch"
+              :class="{ on: enableThinking }"
+              role="switch"
+              :aria-checked="enableThinking"
+              @click="enableThinking = !enableThinking"
+            >
+              <span class="toggle-thumb" />
+            </button>
+          </label>
         </div>
       </div>
 
-      <label class="toggle-row">
-        <span class="toggle-label">Thinking mode</span>
-        <button
-          class="toggle-switch"
-          :class="{ on: enableThinking }"
-          role="switch"
-          :aria-checked="enableThinking"
-          @click="enableThinking = !enableThinking"
-        >
-          <span class="toggle-thumb" />
-        </button>
-      </label>
+      <div class="config-actions">
+        <div class="test-action-group" aria-label="Test actions">
+          <button
+            class="test-icon-btn"
+            :disabled="!canSaveTest"
+            title="Save test"
+            aria-label="Save test"
+            @click="saveTest"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+              <path d="M17 21v-8H7v8" />
+              <path d="M7 3v5h8" />
+            </svg>
+          </button>
+
+          <button
+            class="test-icon-btn"
+            :disabled="testSaving"
+            title="Save as new test"
+            aria-label="Save as new test"
+            @click="saveTestAsNew"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <path d="M14 2v6h6" />
+              <path d="M12 18v-6" />
+              <path d="M9 15h6" />
+            </svg>
+          </button>
+
+          <button
+            class="test-icon-btn danger"
+            :disabled="!canDeleteTest"
+            title="Delete test"
+            aria-label="Delete test"
+            @click="deleteTest"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 6h18" />
+              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+              <path d="M10 11v6M14 11v6" />
+              <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+            </svg>
+          </button>
+        </div>
 
       <button class="run-btn" :class="{ running }" :disabled="running" @click="runLLM">
         {{ running ? 'Running…' : 'Run' }}
       </button>
+      </div>
     </div>
 
     <!-- ── Output ─────────────────────────────────────── -->
@@ -169,16 +252,16 @@ const renderedOutput = computed(() =>
         <div v-if="sandboxOutput.text" class="output-text markdown-body" v-html="renderedOutput" />
         <p v-else class="output-empty">(model returned an empty response)</p>
         <div class="output-meta">
-          <span v-if="sandboxOutput.tokens_used != null" class="meta-chip">
-            {{ sandboxOutput.tokens_used }} tokens
-          </span>
-          <span class="meta-chip">{{ sandboxOutput.latency_ms }} ms</span>
-          <div class="output-actions">
-            <button class="btn-sm" @click="copyOutput">Copy output</button>
+          <div class="meta-stats">
+            <span v-if="sandboxOutput.tokens_used != null" class="meta-chip">
+              {{ sandboxOutput.tokens_used }} tokens
+            </span>
+            <span class="meta-chip">{{ sandboxOutput.latency_ms }} ms</span>
           </div>
           <ResultActions
             :evaluation="sandboxOutput.evaluation"
             :saved-id="sandboxOutput.savedEvaluationId"
+            :copy-text="sandboxOutput.text"
             @saved="markSaved"
           />
         </div>
@@ -195,15 +278,16 @@ const renderedOutput = computed(() =>
   gap: 0;
   overflow-y: auto;
   height: 100%;
-  background: var(--bg-sunken);
+  background: var(--bg);
 }
 
 /* ── Config ── */
 .config-section {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding: 24px 24px 20px;
+  gap: 18px;
+  padding: 28px 28px 20px;
+  background: var(--bg);
   border-bottom: 1px solid var(--border);
 }
 
@@ -215,30 +299,42 @@ const renderedOutput = computed(() =>
   justify-content: space-between;
   font-size: 10px;
   font-weight: 600;
-  letter-spacing: 0.09em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--text-faint);
+  color: var(--text-muted);
 }
 
 .config-textarea {
   width: 100%;
   background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 5px;
+  border: 1px solid #ececec;
+  border-radius: 6px;
   color: var(--text-primary);
   font-family: var(--font-mono);
   font-size: 12.5px;
   line-height: 1.6;
+  min-height: 76px;
+  max-height: 220px;
   padding: 10px 12px;
   resize: vertical;
+  overflow: auto;
+  transition: border-color 0.12s, box-shadow 0.12s, background 0.12s;
 }
-.config-textarea:focus { outline: none; border-color: #aaa; }
+.config-textarea:hover { border-color: #dddddd; }
+.config-textarea:focus {
+  outline: none;
+  border-color: #b8b8b8;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.035);
+}
 
+/* Chevron sits directly beside the label so the disclosure target reads as
+   one unit, instead of floating at the far edge. */
 .collapsible-label {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  width: 100%;
+  justify-content: flex-start;
+  gap: 6px;
+  align-self: flex-start;
   background: none;
   border: none;
   padding: 0;
@@ -246,11 +342,22 @@ const renderedOutput = computed(() =>
 }
 .collapse-chevron {
   font-size: 8px;
-  color: var(--text-faint);
+  color: var(--text-muted);
   transition: transform 0.15s;
   display: inline-block;
 }
 .collapse-chevron.open { transform: rotate(90deg); }
+
+/* Contents of the Advanced settings disclosure — indented under its header so
+   the grouping reads as containment. */
+.advanced-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 12px;
+  padding-left: 12px;
+  border-left: 1px solid var(--border);
+}
 
 /* Params */
 .param-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; }
@@ -263,29 +370,33 @@ const renderedOutput = computed(() =>
 .num-input {
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: 5px;
   color: var(--text-primary);
   font-family: inherit;
   font-size: 13px;
-  padding: 5px 8px;
+  min-height: 34px;
+  padding: 6px 9px;
   width: 100%;
 }
 .num-input:focus { outline: none; border-color: #aaa; }
 
-/* Thinking toggle */
+/* Thinking toggle — label and switch grouped together rather than spread to
+   opposite edges, so the label↔control relationship stays legible. */
 .toggle-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
+  gap: 10px;
+  align-self: flex-start;
   cursor: pointer;
 }
 
 .toggle-label {
   font-size: 10px;
   font-weight: 600;
-  letter-spacing: 0.09em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--text-faint);
+  color: var(--text-muted);
 }
 
 .toggle-switch {
@@ -316,9 +427,53 @@ const renderedOutput = computed(() =>
 }
 .toggle-switch.on .toggle-thumb { transform: translateX(14px); }
 
+.config-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 2px;
+  padding-top: 14px;
+}
+
+.test-action-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.test-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 5px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.12s, background 0.12s, opacity 0.12s;
+}
+.test-icon-btn:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+.test-icon-btn.danger:hover:not(:disabled) {
+  color: #b33;
+  background: #fff5f5;
+}
+.test-icon-btn:disabled {
+  opacity: 0.42;
+  cursor: default;
+}
+
 /* Run button */
 .run-btn {
-  align-self: flex-end;
+  flex: 0 0 auto;
+  min-height: 34px;
   padding: 7px 24px;
   background: #1a1a1a;
   border: none;
@@ -328,14 +483,18 @@ const renderedOutput = computed(() =>
   font-family: inherit;
   font-weight: 600;
   cursor: pointer;
-  letter-spacing: 0.04em;
+  letter-spacing: 0;
   transition: background 0.12s, opacity 0.12s;
 }
 .run-btn:hover:not(:disabled) { background: #333; }
 .run-btn:disabled, .run-btn.running { opacity: 0.5; cursor: not-allowed; }
 
 /* ── Output ── */
-.output-section { padding: 20px 24px; flex: 1; }
+.output-section {
+  flex: 1;
+  padding: 22px 28px;
+  background: var(--bg);
+}
 
 .run-error {
   display: flex;
@@ -351,16 +510,26 @@ const renderedOutput = computed(() =>
 }
 .error-icon { flex-shrink: 0; }
 
-.output-empty { color: var(--text-faint); font-size: 13px; padding: 8px 0; }
+.output-empty {
+  display: flex;
+  align-items: center;
+  min-height: 96px;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 6px 0;
+}
 
 .output-meta {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
   margin-top: 16px;
   padding-top: 12px;
   border-top: 1px solid var(--border);
 }
+.meta-stats { display: flex; align-items: center; gap: 8px; }
 .meta-chip {
   padding: 2px 8px;
   background: var(--bg-selected);
@@ -369,18 +538,6 @@ const renderedOutput = computed(() =>
   color: var(--text-muted);
   font-family: var(--font-mono);
 }
-.output-actions { margin-left: auto; }
-.btn-sm {
-  padding: 3px 10px;
-  background: none;
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  color: var(--text-muted);
-  font-size: 11px;
-  font-family: inherit;
-  cursor: pointer;
-}
-.btn-sm:hover { color: var(--text-primary); border-color: #aaa; }
 
 .output-text {
   font-family: var(--font-sans);

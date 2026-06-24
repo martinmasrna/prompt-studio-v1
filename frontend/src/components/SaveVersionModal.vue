@@ -5,7 +5,7 @@ import { ref, watch } from 'vue';
 import { api } from '../api';
 import {
   activePromptData, activeVersionId, activeVersionText,
-  versions, showSaveModal,
+  versions, showSaveModal, newVersionDraftText,
 } from '../store/editor';
 
 const saveName = ref('');
@@ -16,31 +16,41 @@ async function confirmSaveVersion() {
   if (!activePromptData.value || !saveName.value.trim()) return;
   saving.value = true;
   try {
+    const text = newVersionDraftText.value ?? activeVersionText.value;
     const result = await api.prompts.createVersion(activePromptData.value.id, {
-      text: activeVersionText.value,
+      text,
       name: saveName.value.trim(),
       note: saveNote.value.trim() || undefined,
     });
     // Refresh version list and update active version
     versions.value = await api.prompts.versions(activePromptData.value.id);
     activeVersionId.value = result.id;
+    activeVersionText.value = text;
     showSaveModal.value = false;
     saveName.value = '';
     saveNote.value = '';
+    newVersionDraftText.value = null;
   } finally {
     saving.value = false;
   }
 }
 
 // Reset fields when modal opens
-watch(showSaveModal, open => { if (open) { saveName.value = ''; saveNote.value = ''; } });
+watch(showSaveModal, open => {
+  if (open) {
+    saveName.value = '';
+    saveNote.value = '';
+  } else {
+    newVersionDraftText.value = null;
+  }
+});
 </script>
 
 <template>
   <Teleport to="body">
     <div v-if="showSaveModal" class="overlay" @click.self="showSaveModal = false">
       <div class="modal">
-        <h2 class="modal-title">Save as new version</h2>
+        <h2 class="modal-title">New version</h2>
 
         <input
           v-model="saveName"
@@ -53,14 +63,14 @@ watch(showSaveModal, open => { if (open) { saveName.value = ''; saveNote.value =
         <textarea
           v-model="saveNote"
           class="modal-textarea"
-          placeholder="Optional note about this version…"
+          placeholder="Description"
           rows="3"
         />
 
         <div class="modal-actions">
           <button class="btn-ghost" @click="showSaveModal = false">Cancel</button>
           <button class="btn-primary" :disabled="saving || !saveName.trim()" @click="confirmSaveVersion">
-            {{ saving ? 'Saving…' : 'Save version' }}
+            {{ saving ? 'Creating...' : 'Create version' }}
           </button>
         </div>
       </div>

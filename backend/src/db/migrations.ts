@@ -181,6 +181,17 @@ const migrations: Migration[] = [
       }
     },
   },
+  {
+    version: 7,
+    name: 'drop_prompt_description',
+    up(db) {
+      // The prompt name plus the prompt text convey everything the description
+      // used to; it was never surfaced anywhere else, so it's removed.
+      if (columnNames(db, 'prompts').includes('description')) {
+        db.exec('ALTER TABLE prompts DROP COLUMN description');
+      }
+    },
+  },
 ];
 
 export function runMigrations(db: SQLiteDatabase, migrationList: Migration[] = migrations): void {

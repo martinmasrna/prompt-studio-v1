@@ -2,7 +2,7 @@
 //   GET    /:id            — one prompt + its current version
 //   GET    /:id/versions   — all versions of a prompt (newest first)
 //   POST   /:id/versions   — save a new version, making it the current one
-//   PATCH  /:id            — rename / re-describe a prompt
+//   PATCH  /:id            — rename a prompt
 //   DELETE /:id            — delete a prompt (its versions cascade away)
 // "Current version" is tracked by a single is_current = 1 row per prompt;
 // saving a new version flips the old current off inside one transaction.
@@ -16,7 +16,7 @@ router.get('/:id', (req, res) => {
   const id = Number(req.params.id);
 
   const prompt = db.get(
-    'SELECT id, name, description FROM prompts WHERE id = ?',
+    'SELECT id, name FROM prompts WHERE id = ?',
     [id]
   ) as Record<string, unknown> | null;
 
@@ -71,8 +71,7 @@ router.patch('/:id', (req, res) => {
   const fields: string[] = [];
   const vals: unknown[] = [];
 
-  if (body.name != null)     { fields.push('name = ?');        vals.push(body.name); }
-  if ('description' in body) { fields.push('description = ?'); vals.push(body.description ?? null); }
+  if (body.name != null) { fields.push('name = ?'); vals.push(body.name); }
 
   if (fields.length > 0) {
     vals.push(id);
