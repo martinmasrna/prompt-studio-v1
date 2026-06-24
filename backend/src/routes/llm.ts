@@ -61,7 +61,7 @@ router.post('/run', async (req, res) => {
 
   // 5-minute abort guard — llama.cpp can be slow on large prompts but shouldn't stall forever
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 5 * 60 * 1000);
+  const timer = setTimeout(() => controller.abort(), 2 * 60 * 1000);
   const t0 = Date.now();
 
   try {
@@ -101,7 +101,7 @@ router.post('/run', async (req, res) => {
     const isTimeout = msg.includes('abort') || msg.includes('AbortError');
     res.status(502).json({
       error: isTimeout
-        ? 'Request timed out (5 min limit) — the LLM server did not respond in time'
+        ? 'Request timed out (2 min limit) — the LLM server did not respond in time'
         : `Could not reach LLM server at ${uri}: ${msg}`,
     });
   }

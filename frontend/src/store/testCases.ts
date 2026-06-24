@@ -2,65 +2,42 @@ import { computed, ref } from 'vue';
 import { api, type TestCase, type TestCaseInput } from '../api';
 import { variableValues } from './editor';
 
+// A test case is now purely a scenario: a name and a set of variable values.
+// Sampling parameters live in the configs store; the system prompt lives on the
+// prompt version.
 export const testCases = ref<TestCase[]>([]);
 export const selectedTestCaseId = ref<number | null>(null);
 export const testsLoading = ref(false);
 export const testSaving = ref(false);
 export const testsError = ref<string | null>(null);
 
-export const systemPrompt = ref('');
-export const temperature = ref(0.7);
-export const topP = ref(1);
-export const topK = ref(40);
-export const maxTokens = ref(1024);
-export const enableThinking = ref(false);
-
 let activePromptId: number | null = null;
 let savedSnapshot = '';
 let loadGeneration = 0;
 
-function currentConfiguration(name = '', description: string | null = null): TestCaseInput {
+function currentScenario(name = '', description: string | null = null): TestCaseInput {
   return {
     name,
     description,
     variables: { ...variableValues.value },
-    system_prompt: systemPrompt.value,
-    temperature: temperature.value,
-    top_p: topP.value,
-    top_k: topK.value,
-    max_tokens: maxTokens.value,
-    enable_thinking: enableThinking.value,
   };
 }
 
-function configurationSnapshot(testCase?: TestCase): string {
+function scenarioSnapshot(testCase?: TestCase): string {
   const selected = testCase ?? testCases.value.find(item => item.id === selectedTestCaseId.value);
-  const config = currentConfiguration(selected?.name ?? '', selected?.description ?? null);
-  return JSON.stringify(config);
+  return JSON.stringify(currentScenario(selected?.name ?? '', selected?.description ?? null));
 }
 
-function resetConfiguration(): void {
+function resetScenario(): void {
   selectedTestCaseId.value = null;
   variableValues.value = {};
-  systemPrompt.value = '';
-  temperature.value = 0.7;
-  topP.value = 1;
-  topK.value = 40;
-  maxTokens.value = 1024;
-  enableThinking.value = false;
-  savedSnapshot = configurationSnapshot();
+  savedSnapshot = scenarioSnapshot();
 }
 
 function applyTestCase(testCase: TestCase): void {
   selectedTestCaseId.value = testCase.id;
   variableValues.value = { ...testCase.variables };
-  systemPrompt.value = testCase.system_prompt;
-  temperature.value = testCase.temperature;
-  topP.value = testCase.top_p;
-  topK.value = testCase.top_k;
-  maxTokens.value = testCase.max_tokens;
-  enableThinking.value = testCase.enable_thinking;
-  savedSnapshot = configurationSnapshot(testCase);
+  savedSnapshot = scenarioSnapshot(testCase);
 }
 
 export const selectedTestCase = computed(() =>
@@ -68,14 +45,14 @@ export const selectedTestCase = computed(() =>
 );
 
 export const isTestDirty = computed(() =>
-  selectedTestCaseId.value !== null && configurationSnapshot() !== savedSnapshot
+  selectedTestCaseId.value !== null && scenarioSnapshot() !== savedSnapshot
 );
 
 export async function loadTestCases(promptId: number | null): Promise<void> {
   const generation = ++loadGeneration;
   activePromptId = promptId;
   testCases.value = [];
-  resetConfiguration();
+  resetScenario();
   testsError.value = null;
   if (promptId === null) return;
 
@@ -95,7 +72,7 @@ export async function loadTestCases(promptId: number | null): Promise<void> {
 export function selectTestCase(id: number | null): boolean {
   if (isTestDirty.value && !confirm('Discard unsaved changes to the selected test?')) return false;
   if (id === null) {
-    resetConfiguration();
+    resetScenario();
     return true;
   }
   const testCase = testCases.value.find(item => item.id === id);
@@ -109,7 +86,7 @@ export async function saveNewTest(name: string): Promise<void> {
   testSaving.value = true;
   testsError.value = null;
   try {
-    const created = await api.testCases.create(activePromptId, currentConfiguration(name.trim()));
+    const created = await api.testCases.create(activePromptId, currentScenario(name.trim()));
     testCases.value = [...testCases.value, created]
       .sort((a, b) => a.name.localeCompare(b.name));
     applyTestCase(created);
@@ -129,7 +106,7 @@ export async function saveSelectedTest(): Promise<void> {
   try {
     const updated = await api.testCases.update(
       selected.id,
-      currentConfiguration(selected.name, selected.description)
+      currentScenario(selected.name, selected.description)
     );
     const index = testCases.value.findIndex(item => item.id === updated.id);
     if (index >= 0) testCases.value[index] = updated;
@@ -147,5 +124,5 @@ export async function deleteSelectedTest(): Promise<void> {
   if (!selected) return;
   await api.testCases.delete(selected.id);
   testCases.value = testCases.value.filter(item => item.id !== selected.id);
-  resetConfiguration();
+  resetScenario();
 }

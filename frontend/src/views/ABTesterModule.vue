@@ -1,28 +1,29 @@
 <script setup lang="ts">
-// A/B Tester module. Runs two versions of the same prompt side by side under
-// identical settings so they can be compared fairly.
-//
-// Each side picks a version (A / B) from the same prompt's version list. The
-// model config (system prompt, sampling params, thinking) and the variable
-// values are *shared* — only the prompt text differs between the two sides — so
-// any difference in the outputs comes from the wording, not the settings.
-// "Run both" fires the two requests in parallel and renders each result.
+// A/B Tester. Compares two runs that differ along exactly one axis — the prompt
+// version OR the sampling config — while the other two axes and the scenario's
+// variables stay fixed, so any difference in output is attributable to the one
+// thing that changed. The system prompt travels with the version and the
+// sampling parameters travel with the config, so each side runs with its own
+// version's system prompt and its own config's parameters.
 import { ref, computed, watch } from 'vue';
 import { renderContent } from '../utils/renderContent';
 import { api } from '../api';
 import type { EvaluationInput, SandboxRunResult } from '../api';
-import {
-  activePromptData, activeVersionId, versions, variableValues,
-} from '../store/editor';
+import { activePromptData, activeVersionId, versions, variableValues } from '../store/editor';
 import { activeModelId } from '../store/settings';
 import {
-  systemPrompt, temperature, topP, topK, maxTokens, enableThinking,
-} from '../store/testCases';
+  configs, selectedConfigId,
+  temperature, topP, topK, maxTokens, enableThinking,
+} from '../store/configs';
 import TestCaseControls from '../components/TestCaseControls.vue';
 import ResultActions from '../components/ResultActions.vue';
 import VariablesPanel from '../components/VariablesPanel.vue';
 import { extractVariables, missingVariables, substituteVariables } from '../utils/variables';
-import { captureEvaluationContext, completeEvaluation } from '../utils/evaluations';
+import { captureEvaluationContext, completeEvaluation, type RunSettings } from '../utils/evaluations';
+
+// ── Vary axis ────────────────────────────────────────────────────────────────
+type VaryAxis = 'version' | 'config';
+const varyAxis = ref<VaryAxis>('version');
 
 // ── Run state ──────────────────────────────────────────────────────────────────
 const outputA  = ref<SandboxRunResult | null>(null);
@@ -38,32 +39,55 @@ const savedB = ref<number | null>(null);
 const savedComparison = ref<number | null>(null);
 const comparisonError = ref<string | null>(null);
 
-// ── Version selectors ──────────────────────────────────────────────────────────
+// ── Axis selections ────────────────────────────────────────────────────────────
+// Per-side selectors for the varied axis, plus a shared selector for the held one.
 const aVersionId = ref<number | null>(null);
 const bVersionId = ref<number | null>(null);
+const sharedVersionId = ref<number | null>(null);
+const aConfigId = ref<number | null>(null);
+const bConfigId = ref<number | null>(null);
+const sharedConfigId = ref<number | null>(null);
 
-// Reset selections and outputs whenever the active prompt changes
+function resetRun() {
+  outputA.value = null; outputB.value = null;
+  errorA.value = null; errorB.value = null;
+  evaluationA.value = null; evaluationB.value = null;
+  savedA.value = null; savedB.value = null;
+  savedComparison.value = null; comparisonError.value = null;
+}
+
+// Reset selections and outputs whenever the active prompt changes.
 watch(() => activePromptData.value?.id, () => {
   aVersionId.value = activeVersionId.value;
   bVersionId.value = activeVersionId.value;
-  outputA.value = null;
-  outputB.value = null;
-  errorA.value  = null;
-  errorB.value  = null;
-  evaluationA.value = null;
-  evaluationB.value = null;
-  savedA.value = null;
-  savedB.value = null;
-  savedComparison.value = null;
-  comparisonError.value = null;
+  sharedVersionId.value = activeVersionId.value;
+  aConfigId.value = selectedConfigId.value;
+  bConfigId.value = selectedConfigId.value;
+  sharedConfigId.value = selectedConfigId.value;
+  resetRun();
 }, { immediate: true });
 
-const aText = computed(() =>
-  versions.value.find(v => v.id === aVersionId.value)?.text ?? ''
-);
-const bText = computed(() =>
-  versions.value.find(v => v.id === bVersionId.value)?.text ?? ''
-);
+// ── Resolve each side's effective version and config ───────────────────────────
+const versionAId = computed(() => varyAxis.value === 'version' ? aVersionId.value : sharedVersionId.value);
+const versionBId = computed(() => varyAxis.value === 'version' ? bVersionId.value : sharedVersionId.value);
+const configAId  = computed(() => varyAxis.value === 'config'  ? aConfigId.value  : sharedConfigId.value);
+const configBId  = computed(() => varyAxis.value === 'config'  ? bConfigId.value  : sharedConfigId.value);
+
+const textFor = (versionId: number | null) => versions.value.find(v => v.id === versionId)?.text ?? '';
+const systemPromptFor = (versionId: number | null) => versions.value.find(v => v.id === versionId)?.system_prompt ?? '';
+
+// A config's parameters come from the saved config; "Scratch" (no config) falls
+// back to the live parameter state shared with the sandbox.
+function settingsFor(versionId: number | null, configId: number | null): RunSettings {
+  const c = configId === null ? null : configs.value.find(x => x.id === configId);
+  const params = c
+    ? { temperature: c.temperature, top_p: c.top_p, top_k: c.top_k, max_tokens: c.max_tokens, enable_thinking: c.enable_thinking }
+    : { temperature: temperature.value, top_p: topP.value, top_k: topK.value, max_tokens: maxTokens.value, enable_thinking: enableThinking.value };
+  return { system_prompt: systemPromptFor(versionId), ...params };
+}
+
+const aText = computed(() => textFor(versionAId.value));
+const bText = computed(() => textFor(versionBId.value));
 
 // ── Variables (union of both sides) ───────────────────────────────────────────
 const detectedVars = computed(() => {
@@ -82,9 +106,7 @@ const missing = computed(() => [
   ]),
 ]);
 
-// ── Shared config ──────────────────────────────────────────────────────────────
-const advancedOpen   = ref(false);
-
+// ── Prompt preview modal ───────────────────────────────────────────────────────
 const promptModal = ref<'a' | 'b' | null>(null);
 const modalText = computed(() =>
   promptModal.value === 'a'
@@ -102,45 +124,40 @@ async function runBoth() {
     errorB.value = message;
     return;
   }
-  if (aVersionId.value === null || bVersionId.value === null) {
-    errorA.value = 'Select both prompt versions';
-    errorB.value = 'Select both prompt versions';
+  if (versionAId.value === null || versionBId.value === null) {
+    errorA.value = 'Select a prompt version';
+    errorB.value = 'Select a prompt version';
     return;
   }
   const renderedPromptA = substituteVariables(aText.value, variableValues.value);
   const renderedPromptB = substituteVariables(bText.value, variableValues.value);
-  const contextA = captureEvaluationContext('ab', aVersionId.value, aText.value, renderedPromptA);
-  const contextB = captureEvaluationContext('ab', bVersionId.value, bText.value, renderedPromptB);
-  outputA.value = null;
-  outputB.value = null;
-  errorA.value  = null;
-  errorB.value  = null;
+  const settingsA = settingsFor(versionAId.value, configAId.value);
+  const settingsB = settingsFor(versionBId.value, configBId.value);
+  const contextA = captureEvaluationContext('ab', versionAId.value, aText.value, renderedPromptA, settingsA);
+  const contextB = captureEvaluationContext('ab', versionBId.value, bText.value, renderedPromptB, settingsB);
+
+  resetRun();
   runningA.value = true;
   runningB.value = true;
-  evaluationA.value = null;
-  evaluationB.value = null;
-  savedA.value = null;
-  savedB.value = null;
-  savedComparison.value = null;
-  comparisonError.value = null;
 
-  const shared = {
-    system_prompt:   systemPrompt.value || undefined,
+  const requestFor = (userMessage: string, s: RunSettings) => ({
+    user_message:    userMessage,
     model_id:        activeModelId.value ?? undefined,
-    temperature:     temperature.value,
-    top_p:           topP.value,
-    top_k:           topK.value,
-    max_tokens:      maxTokens.value,
-    enable_thinking: enableThinking.value,
-  };
+    system_prompt:   s.system_prompt || undefined,
+    temperature:     s.temperature,
+    top_p:           s.top_p,
+    top_k:           s.top_k,
+    max_tokens:      s.max_tokens,
+    enable_thinking: s.enable_thinking,
+  });
 
   await Promise.all([
-    api.llm.run({ ...shared, user_message: renderedPromptA })
+    api.llm.run(requestFor(renderedPromptA, settingsA))
       .then(r  => { outputA.value = r; evaluationA.value = completeEvaluation(contextA, r); })
       .catch(e => { errorA.value  = e instanceof Error ? e.message : 'Unknown error'; })
       .finally(() => { runningA.value = false; }),
 
-    api.llm.run({ ...shared, user_message: renderedPromptB })
+    api.llm.run(requestFor(renderedPromptB, settingsB))
       .then(r  => { outputB.value = r; evaluationB.value = completeEvaluation(contextB, r); })
       .catch(e => { errorB.value  = e instanceof Error ? e.message : 'Unknown error'; })
       .finally(() => { runningB.value = false; }),
@@ -179,59 +196,34 @@ const renderedB = computed(() =>
     <!-- ── Config bar ─────────────────────────────────────── -->
     <div class="config-bar">
 
-      <TestCaseControls />
+      <!-- Vary axis: which single thing differs between the two sides -->
+      <div class="vary-row">
+        <span class="field-label">Vary</span>
+        <div class="vary-toggle" role="tablist">
+          <button :class="{ active: varyAxis === 'version' }" role="tab" :aria-selected="varyAxis === 'version'" @click="varyAxis = 'version'">Version</button>
+          <button :class="{ active: varyAxis === 'config' }" role="tab" :aria-selected="varyAxis === 'config'" @click="varyAxis = 'config'">Config</button>
+        </div>
 
-      <!-- Variables (appear when either version uses {{placeholders}}) -->
-      <VariablesPanel :detected-vars="detectedVars" />
-
-      <!-- Advanced settings (collapsible, hidden by default) -->
-      <div class="field-block">
-        <button class="collapsible-label" @click="advancedOpen = !advancedOpen">
-          <span class="field-label">Advanced</span>
-          <span class="chevron" :class="{ open: advancedOpen }">▶</span>
-        </button>
-        <template v-if="advancedOpen">
-          <!-- System prompt -->
-          <textarea
-            v-model="systemPrompt"
-            class="config-textarea"
-            placeholder="System prompt (optional)…"
-            rows="3"
-            spellcheck="false"
-          />
-          <!-- Params -->
-          <div class="params-row">
-            <div class="param">
-              <label class="field-label">Temperature <span class="param-val">{{ temperature.toFixed(1) }}</span></label>
-              <input v-model.number="temperature" aria-label="Temperature" type="range" min="0" max="2" step="0.1" class="slider" />
-            </div>
-            <div class="param">
-              <label class="field-label">Top-P <span class="param-val">{{ topP.toFixed(2) }}</span></label>
-              <input v-model.number="topP" type="range" min="0" max="1" step="0.01" class="slider" />
-            </div>
-            <div class="param">
-              <label class="field-label">Top-K</label>
-              <input v-model.number="topK" type="number" min="1" max="200" class="num-input" />
-            </div>
-            <div class="param">
-              <label class="field-label">Max tokens</label>
-              <input v-model.number="maxTokens" type="number" min="64" max="32768" class="num-input" />
-            </div>
-            <label class="thinking-toggle">
-              <span class="field-label">Thinking</span>
-              <button
-                class="toggle-switch"
-                :class="{ on: enableThinking }"
-                role="switch"
-                :aria-checked="enableThinking"
-                @click="enableThinking = !enableThinking"
-              >
-                <span class="toggle-thumb" />
-              </button>
-            </label>
-          </div>
+        <!-- The held axis is a single shared selector -->
+        <template v-if="varyAxis === 'version'">
+          <span class="field-label held-label">Config (shared)</span>
+          <select v-model="sharedConfigId" class="shared-select" aria-label="Shared config">
+            <option :value="null">Scratch</option>
+            <option v-for="c in configs" :key="c.id" :value="c.id">{{ c.name }}</option>
+          </select>
+        </template>
+        <template v-else>
+          <span class="field-label held-label">Version (shared)</span>
+          <select v-model="sharedVersionId" class="shared-select" aria-label="Shared version">
+            <option v-for="v in versions" :key="v.id" :value="v.id">{{ v.name }}{{ v.is_current ? ' ★' : '' }}</option>
+          </select>
         </template>
       </div>
+
+      <TestCaseControls />
+
+      <!-- Variables (appear when either side uses {{placeholders}}) -->
+      <VariablesPanel :detected-vars="detectedVars" />
 
       <!-- Run button -->
       <div class="run-row">
@@ -256,10 +248,14 @@ const renderedB = computed(() =>
       <div class="side">
         <div class="side-header">
           <span class="side-badge">A</span>
-          <select v-model="aVersionId" class="sel-version">
+          <select v-if="varyAxis === 'version'" v-model="aVersionId" class="sel-version" aria-label="Version A">
             <option v-for="v in versions" :key="v.id" :value="v.id">
               {{ v.name }}{{ v.is_current ? ' ★' : '' }}
             </option>
+          </select>
+          <select v-else v-model="aConfigId" class="sel-version" aria-label="Config A">
+            <option :value="null">Scratch</option>
+            <option v-for="c in configs" :key="c.id" :value="c.id">{{ c.name }}</option>
           </select>
           <button class="eye-btn" title="View prompt" @click="promptModal = 'a'">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -303,10 +299,14 @@ const renderedB = computed(() =>
       <div class="side">
         <div class="side-header">
           <span class="side-badge">B</span>
-          <select v-model="bVersionId" class="sel-version">
+          <select v-if="varyAxis === 'version'" v-model="bVersionId" class="sel-version" aria-label="Version B">
             <option v-for="v in versions" :key="v.id" :value="v.id">
               {{ v.name }}{{ v.is_current ? ' ★' : '' }}
             </option>
+          </select>
+          <select v-else v-model="bConfigId" class="sel-version" aria-label="Config B">
+            <option :value="null">Scratch</option>
+            <option v-for="c in configs" :key="c.id" :value="c.id">{{ c.name }}</option>
           </select>
           <button class="eye-btn" title="View prompt" @click="promptModal = 'b'">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -406,82 +406,34 @@ const renderedB = computed(() =>
   color: var(--text-faint);
 }
 
-.collapsible-label {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  background: none;
+/* ── Vary axis row ── */
+.vary-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.held-label { margin-left: 6px; }
+
+.vary-toggle { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.vary-toggle button {
+  padding: 6px 14px;
+  background: var(--bg);
   border: none;
-  padding: 0;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 12px;
   cursor: pointer;
 }
-.chevron { font-size: 8px; color: var(--text-faint); transition: transform 0.15s; display: inline-block; }
-.chevron.open { transform: rotate(90deg); }
+.vary-toggle button + button { border-left: 1px solid var(--border); }
+.vary-toggle button.active { background: #1a1a1a; color: #fff; }
 
-.config-textarea {
-  width: 100%;
+.shared-select {
+  min-height: 32px;
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 5px;
-  color: var(--text-primary);
-  font-family: var(--font-mono);
-  font-size: 12.5px;
-  line-height: 1.6;
-  padding: 10px 12px;
-  resize: vertical;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 12px;
+  padding: 5px 9px;
 }
-.config-textarea:focus { outline: none; border-color: #aaa; }
-
-.params-row { display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
-
-.param { display: flex; flex-direction: column; gap: 5px; flex: 1; min-width: 100px; }
-.param-val { font-weight: 400; color: var(--text-secondary); font-size: 10px; text-transform: none; letter-spacing: 0; }
-.slider { width: 100%; accent-color: #888; cursor: pointer; }
-.num-input {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--text-primary);
-  font-family: inherit;
-  font-size: 13px;
-  padding: 5px 8px;
-  width: 100%;
-}
-.num-input:focus { outline: none; border-color: #aaa; }
-
-.thinking-toggle {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-.toggle-switch {
-  position: relative;
-  width: 32px;
-  height: 18px;
-  background: var(--border);
-  border: none;
-  border-radius: 9px;
-  cursor: pointer;
-  transition: background 0.18s;
-  padding: 0;
-}
-.toggle-switch.on { background: #1a1a1a; }
-.toggle-thumb {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 14px;
-  height: 14px;
-  background: #fff;
-  border-radius: 50%;
-  transition: transform 0.18s;
-  display: block;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-}
-.toggle-switch.on .toggle-thumb { transform: translateX(14px); }
+.shared-select:focus { outline: none; border-color: #aaa; }
 
 .run-row { display: flex; justify-content: flex-end; align-items: center; gap: 8px; }
 .save-comparison-btn { padding: 7px 14px; background: var(--bg); border: 1px solid var(--border); border-radius: 5px; color: var(--text-secondary); font: inherit; font-size: 12px; cursor: pointer; }

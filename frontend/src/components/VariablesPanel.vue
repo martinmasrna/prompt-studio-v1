@@ -12,7 +12,7 @@ import { computed } from 'vue';
 import { variableValues, versions } from '../store/editor';
 import { extractVariables } from '../utils/variables';
 
-const props = defineProps<{ detectedVars: string[] }>();
+const props = defineProps<{ detectedVars: string[]; hideLabel?: boolean }>();
 
 function isEmpty(name: string): boolean {
   return !variableValues.value[name]?.trim();
@@ -60,10 +60,10 @@ function preview(value: string): string {
 
 <template>
   <div v-if="detectedVars.length" class="field-block">
-    <label class="field-label">Variables</label>
+    <label v-if="!hideLabel" class="field-label">Variables</label>
     <!-- Children are indented under the header so the grouping reads as
          containment rather than another flat list of fields. -->
-    <div class="var-list">
+    <div class="var-list" :class="{ 'no-indent': hideLabel }">
       <div v-for="name in detectedVars" :key="name" class="var-row">
         <label class="var-name">{{ name }}</label>
         <div class="var-field">
@@ -113,6 +113,8 @@ function preview(value: string): string {
   padding-left: 12px;
   border-left: 1px solid var(--border);
 }
+/* Inside the titled Variables box, drop the indent line — the box already groups. */
+.var-list.no-indent { padding-left: 0; border-left: none; }
 .var-row { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
 .var-name { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); }
 

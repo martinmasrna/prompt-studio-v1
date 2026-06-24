@@ -6,8 +6,8 @@ import { watch, onMounted } from 'vue';
 import { api } from './api';
 import { useAppState } from './store/app';
 import {
-  activeModule, activePromptData, activeVersionId,
-  activeVersionText, versions, variableValues, sandboxOutput,
+  activeModule, activePromptData, versions, variableValues, sandboxOutput,
+  applyActiveVersion, clearActiveVersion,
 } from './store/editor';
 import Sidebar from './components/Sidebar.vue';
 import SaveVersionModal from './components/SaveVersionModal.vue';
@@ -18,6 +18,7 @@ import ResultsModule from './views/ResultsModule.vue';
 import IssuesModule from './views/IssuesModule.vue';
 import { loadModels } from './store/settings';
 import { loadTestCases } from './store/testCases';
+import { loadConfigs } from './store/configs';
 
 const { prompts, selectedPromptId } = useAppState();
 
@@ -37,10 +38,9 @@ watch(selectedPromptId, async (id) => {
   if (id === null) {
     activePromptData.value = null;
     versions.value = [];
-    activeVersionId.value = null;
-    activeVersionText.value = '';
     variableValues.value = {};
-    await loadTestCases(null);
+    await Promise.all([loadTestCases(null), loadConfigs(null)]);
+    clearActiveVersion();
     return;
   }
 
@@ -48,14 +48,17 @@ watch(selectedPromptId, async (id) => {
     api.prompts.get(id),
     api.prompts.versions(id),
     loadTestCases(id),
+    loadConfigs(id),
   ]);
 
   activePromptData.value = detail;
   versions.value = versionList;
 
+  // Configs are loaded before this point, so the version's default config can be
+  // selected to drive the initial parameter panel.
   const cv = detail.current_version;
-  activeVersionId.value  = cv?.id ?? null;
-  activeVersionText.value = cv?.text ?? '';
+  if (cv) applyActiveVersion(cv);
+  else clearActiveVersion();
 }, { immediate: true });
 
 </script>

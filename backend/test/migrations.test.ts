@@ -30,16 +30,25 @@ test('fresh migrations are complete and idempotent', () => withDatabase(db => {
     { version: 5, name: 'add_diagnosed_issue_status' },
     { version: 6, name: 'add_evaluation_note' },
     { version: 7, name: 'drop_prompt_description' },
+    { version: 8, name: 'decompose_test_config' },
   ]);
   const promptColumns = db.all('PRAGMA table_info(prompts)') as unknown as Array<{ name: string }>;
   assert.ok(!promptColumns.some(column => column.name === 'description'));
   assert.ok(db.get("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'test_cases'"));
   assert.ok(db.get("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'evaluations'"));
+  assert.ok(db.get("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'configs'"));
   const issueColumns = db.all('PRAGMA table_info(issues)') as unknown as Array<{ name: string }>;
   assert.ok(issueColumns.some(column => column.name === 'resolution_note'));
   assert.ok(issueColumns.some(column => column.name === 'resolved_version_id'));
   const evaluationColumns = db.all('PRAGMA table_info(evaluations)') as unknown as Array<{ name: string }>;
   assert.ok(evaluationColumns.some(column => column.name === 'note'));
+  // v8 moves sampling params into configs and the system prompt onto versions.
+  const testCaseColumns = db.all('PRAGMA table_info(test_cases)') as unknown as Array<{ name: string }>;
+  assert.ok(!testCaseColumns.some(column => column.name === 'temperature'));
+  assert.ok(!testCaseColumns.some(column => column.name === 'system_prompt'));
+  const versionColumns = db.all('PRAGMA table_info(versions)') as unknown as Array<{ name: string }>;
+  assert.ok(versionColumns.some(column => column.name === 'system_prompt'));
+  assert.ok(versionColumns.some(column => column.name === 'default_config_id'));
 }));
 
 test('existing v1 data is preserved and duplicate current rows are repaired', () => withDatabase(db => {
@@ -93,13 +102,90 @@ test('test-case constraints, Unicode JSON, uniqueness, and cascade deletion work
     "INSERT INTO test_cases (prompt_id, name) VALUES (?, 'long INVOICE')",
     [promptId]
   ));
+  // Sampling params now live on configs, which enforce the range checks.
+  db.run("INSERT INTO configs (prompt_id, name, temperature) VALUES (?, 'ok', 1.5)", [promptId]);
   assert.throws(() => db.run(
-    "INSERT INTO test_cases (prompt_id, name, temperature) VALUES (?, 'invalid', 3)",
+    "INSERT INTO configs (prompt_id, name, temperature) VALUES (?, 'invalid', 3)",
     [promptId]
   ));
 
   db.run('DELETE FROM prompts WHERE id = ?', [promptId]);
   assert.equal((db.get('SELECT COUNT(*) AS count FROM test_cases') as { count: number }).count, 0);
+  assert.equal((db.get('SELECT COUNT(*) AS count FROM configs') as { count: number }).count, 0);
+}));
+
+test('v8 decomposes bundled test config, preserving data', () => withDatabase(db => {
+  // Seed a pre-v8 database: migrations 1–7 applied, test_cases still carrying
+  // the bundled system_prompt + sampling params.
+  db.exec(`
+    PRAGMA foreign_keys = ON;
+    CREATE TABLE schema_migrations (
+      version INTEGER PRIMARY KEY,
+      name TEXT NOT NULL,
+      applied_at INTEGER NOT NULL DEFAULT (unixepoch())
+    );
+    INSERT INTO schema_migrations (version, name) VALUES
+      (1, 'baseline_prompt_schema'), (2, 'add_test_cases'),
+      (3, 'add_results_and_issues'), (4, 'add_issue_resolutions'),
+      (5, 'add_diagnosed_issue_status'), (6, 'add_evaluation_note'),
+      (7, 'drop_prompt_description');
+    CREATE TABLE prompts (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL);
+    CREATE TABLE versions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      prompt_id INTEGER NOT NULL REFERENCES prompts(id) ON DELETE CASCADE,
+      name TEXT NOT NULL, text TEXT NOT NULL, note TEXT,
+      is_current INTEGER NOT NULL DEFAULT 0 CHECK (is_current IN (0, 1))
+    );
+    CREATE TABLE test_cases (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      prompt_id INTEGER NOT NULL REFERENCES prompts(id) ON DELETE CASCADE,
+      name TEXT NOT NULL, description TEXT,
+      variables_json TEXT NOT NULL DEFAULT '{}',
+      system_prompt TEXT NOT NULL DEFAULT '',
+      temperature REAL NOT NULL DEFAULT 0.7,
+      top_p REAL NOT NULL DEFAULT 1.0,
+      top_k INTEGER NOT NULL DEFAULT 40,
+      max_tokens INTEGER NOT NULL DEFAULT 1024,
+      enable_thinking INTEGER NOT NULL DEFAULT 0
+    );
+    INSERT INTO prompts (id, name) VALUES (1, 'p');
+    INSERT INTO versions (id, prompt_id, name, text, is_current) VALUES
+      (10, 1, 'old', 't1', 0),
+      (11, 1, 'cur', 't2', 1);
+    -- Two test cases share the default tuple (deduped to one config); a third
+    -- carries a non-default tuple plus a system prompt (the bearer).
+    INSERT INTO test_cases (id, prompt_id, name, variables_json, system_prompt,
+                            temperature, top_p, top_k, max_tokens, enable_thinking) VALUES
+      (1, 1, 'a', '{}', '', 0.7, 1.0, 40, 1024, 0),
+      (2, 1, 'b', '{}', '', 0.7, 1.0, 40, 1024, 0),
+      (3, 1, 'c', '{"q":"x"}', 'PERSONA', 0.3, 1.0, 40, 2048, 0);
+  `);
+
+  runMigrations(db);
+
+  // Distinct parameter tuples become two configs; the default tuple is "Default".
+  const configs = db.all('SELECT id, name FROM configs WHERE prompt_id = 1 ORDER BY id') as unknown as Array<{ id: number; name: string }>;
+  assert.equal(configs.length, 2);
+  const defaultConfig = configs.find(c => c.name === 'Default');
+  const bearerConfig = configs.find(c => c.name !== 'Default');
+  assert.ok(defaultConfig, 'a Default config exists');
+  assert.equal(bearerConfig?.name, 'temp 0.3, 2048 tok');
+
+  // The system prompt moves onto the current version, with the bearer's config
+  // as that version's default; the other version stays empty with the Default.
+  const current = db.get('SELECT system_prompt, default_config_id FROM versions WHERE id = 11') as { system_prompt: string; default_config_id: number };
+  assert.equal(current.system_prompt, 'PERSONA');
+  assert.equal(current.default_config_id, bearerConfig!.id);
+  const old = db.get('SELECT system_prompt, default_config_id FROM versions WHERE id = 10') as { system_prompt: string; default_config_id: number };
+  assert.equal(old.system_prompt, '');
+  assert.equal(old.default_config_id, defaultConfig!.id);
+
+  // test_cases keeps every scenario and its variables; the bundled columns are gone.
+  const testCaseColumns = db.all('PRAGMA table_info(test_cases)') as unknown as Array<{ name: string }>;
+  assert.ok(!testCaseColumns.some(c => c.name === 'temperature'));
+  assert.ok(!testCaseColumns.some(c => c.name === 'system_prompt'));
+  assert.equal((db.get('SELECT COUNT(*) AS count FROM test_cases') as { count: number }).count, 3);
+  assert.equal((db.get("SELECT variables_json FROM test_cases WHERE id = 3") as { variables_json: string }).variables_json, '{"q":"x"}');
 }));
 
 test('existing issues gain resolution fields without losing data', () => withDatabase(db => {

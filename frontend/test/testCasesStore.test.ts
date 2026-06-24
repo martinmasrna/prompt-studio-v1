@@ -14,22 +14,16 @@ vi.mock('../src/api', () => ({
 
 import { variableValues } from '../src/store/editor';
 import {
-  enableThinking,
   isTestDirty,
   loadTestCases,
-  maxTokens,
   saveNewTest,
   saveSelectedTest,
   selectTestCase,
   selectedTestCaseId,
-  systemPrompt,
-  temperature,
   testCases,
   testSaving,
   testsError,
   testsLoading,
-  topK,
-  topP,
   deleteSelectedTest,
 } from '../src/store/testCases';
 
@@ -40,12 +34,6 @@ function fixture(id: number, name: string, overrides: Partial<TestCase> = {}): T
     name,
     description: null,
     variables: { query: 'saved', unused: 'preserved' },
-    system_prompt: 'Be concise',
-    temperature: 0.2,
-    top_p: 0.8,
-    top_k: 20,
-    max_tokens: 512,
-    enable_thinking: true,
     created_at: 1,
     updated_at: 1,
     ...overrides,
@@ -66,19 +54,13 @@ beforeEach(async () => {
 });
 
 describe('saved-test store', () => {
-  it('loads tests, applies every setting, and preserves unused variables', async () => {
+  it('loads tests and applies the scenario variables', async () => {
     apiMock.list.mockResolvedValue([fixture(1, 'Loaded')]);
     await loadTestCases(10);
     expect(testsLoading.value).toBe(false);
     expect(selectTestCase(1)).toBe(true);
     expect(selectedTestCaseId.value).toBe(1);
     expect(variableValues.value).toEqual({ query: 'saved', unused: 'preserved' });
-    expect(systemPrompt.value).toBe('Be concise');
-    expect(temperature.value).toBe(0.2);
-    expect(topP.value).toBe(0.8);
-    expect(topK.value).toBe(20);
-    expect(maxTokens.value).toBe(512);
-    expect(enableThinking.value).toBe(true);
     expect(isTestDirty.value).toBe(false);
   });
 
@@ -98,11 +80,11 @@ describe('saved-test store', () => {
     expect(testsLoading.value).toBe(false);
   });
 
-  it('tracks changes and protects them with discard confirmation', async () => {
+  it('tracks variable changes and protects them with discard confirmation', async () => {
     apiMock.list.mockResolvedValue([fixture(1, 'One'), fixture(2, 'Two')]);
     await loadTestCases(10);
     selectTestCase(1);
-    temperature.value = 0.9;
+    variableValues.value = { ...variableValues.value, query: 'edited' };
     expect(isTestDirty.value).toBe(true);
     vi.mocked(confirm).mockReturnValueOnce(false);
     expect(selectTestCase(2)).toBe(false);
@@ -112,18 +94,14 @@ describe('saved-test store', () => {
     expect(isTestDirty.value).toBe(false);
   });
 
-  it('creates sorted tests from the complete draft and selects the result', async () => {
+  it('creates sorted tests from the current variables and selects the result', async () => {
     apiMock.list.mockResolvedValue([fixture(1, 'Zulu')]);
     await loadTestCases(10);
     variableValues.value = { query: 'new value' };
-    systemPrompt.value = 'System';
-    temperature.value = 0.4;
-    apiMock.create.mockResolvedValue(fixture(3, 'Alpha', {
-      variables: { query: 'new value' }, system_prompt: 'System', temperature: 0.4,
-    }));
+    apiMock.create.mockResolvedValue(fixture(3, 'Alpha', { variables: { query: 'new value' } }));
     await saveNewTest('  Alpha  ');
     expect(apiMock.create).toHaveBeenCalledWith(10, expect.objectContaining({
-      name: 'Alpha', variables: { query: 'new value' }, system_prompt: 'System', temperature: 0.4,
+      name: 'Alpha', variables: { query: 'new value' },
     }));
     expect(testCases.value.map(item => item.name)).toEqual(['Alpha', 'Zulu']);
     expect(selectedTestCaseId.value).toBe(3);
@@ -135,10 +113,12 @@ describe('saved-test store', () => {
     apiMock.list.mockResolvedValue([original]);
     await loadTestCases(10);
     selectTestCase(1);
-    topK.value = 55;
-    apiMock.update.mockResolvedValue(fixture(1, 'Editable', { top_k: 55, updated_at: 2 }));
+    variableValues.value = { ...variableValues.value, query: 'updated' };
+    apiMock.update.mockResolvedValue(fixture(1, 'Editable', { variables: { query: 'updated', unused: 'preserved' }, updated_at: 2 }));
     await saveSelectedTest();
-    expect(apiMock.update).toHaveBeenCalledWith(1, expect.objectContaining({ top_k: 55 }));
+    expect(apiMock.update).toHaveBeenCalledWith(1, expect.objectContaining({
+      variables: { query: 'updated', unused: 'preserved' },
+    }));
     expect(isTestDirty.value).toBe(false);
 
     apiMock.delete.mockResolvedValue({ ok: true });

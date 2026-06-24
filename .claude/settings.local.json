@@ -35,7 +35,11 @@
       "Bash(\"C:/nvm4w/nodejs/npx.cmd\" vue-tsc *)",
       "Bash(echo \"exit: $?\")",
       "Bash(npm run *)",
-      "Bash(npm test *)"
+      "Bash(npm test *)",
+      "Bash(node -e ' *)",
+      "Bash(node \"C:/Users/masrna/AppData/Local/Temp/claude/C--Users-masrna-Projects-Prompt-Studio/c6dca5d5-ae7d-451d-b117-ed81aabdd1fc/scratchpad/inspect.js\")",
+      "Bash(cp prompt-studio.db prompt-studio.db.bak-__TRACKED_VAR__)",
+      "Bash(cp prompt-studio.db \"C:/Users/masrna/AppData/Local/Temp/claude/C--Users-masrna-Projects-Prompt-Studio/c6dca5d5-ae7d-451d-b117-ed81aabdd1fc/scratchpad/probe.db\")"
     ]
   }
 }

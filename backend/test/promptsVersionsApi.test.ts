@@ -8,6 +8,8 @@ interface Version {
   text: string;
   note: string | null;
   is_current: 0 | 1;
+  system_prompt: string;
+  default_config_id: number | null;
 }
 
 test('prompt and version API', async t => {
@@ -108,6 +110,68 @@ test('prompt and version API', async t => {
       'SELECT COUNT(*) AS count FROM versions WHERE prompt_id = ? AND is_current = 1',
       [promptId]
     ) as { count: number }).count, 1);
+  });
+
+  await t.test('versions carry a system prompt and default config', async () => {
+    const created = await requestJson<{ id: number }>(
+      server.baseUrl,
+      '/api/prompts',
+      jsonRequest('POST', { name: 'Tutor' })
+    );
+    const promptId = created.body.id;
+
+    const config = await requestJson<{ id: number }>(
+      server.baseUrl,
+      `/api/prompts/${promptId}/configs`,
+      jsonRequest('POST', { name: 'Precise', temperature: 0.3 })
+    );
+
+    // New version saved with a system prompt and a default config of this prompt.
+    const version = await requestJson<{ id: number }>(
+      server.baseUrl,
+      `/api/prompts/${promptId}/versions`,
+      jsonRequest('POST', { name: 'v2', text: 'hi', system_prompt: 'You are a tutor.', default_config_id: config.body.id })
+    );
+    assert.equal(version.response.status, 201);
+
+    let versions = (await requestJson<Version[]>(server.baseUrl, `/api/prompts/${promptId}/versions`)).body;
+    const saved = versions.find(v => v.id === version.body.id)!;
+    assert.equal(saved.system_prompt, 'You are a tutor.');
+    assert.equal(saved.default_config_id, config.body.id);
+
+    // The current-version read surface exposes the same fields.
+    const detail = await requestJson<{ current_version: Version }>(server.baseUrl, `/api/prompts/${promptId}`);
+    assert.equal(detail.body.current_version.system_prompt, 'You are a tutor.');
+    assert.equal(detail.body.current_version.default_config_id, config.body.id);
+
+    // PATCH can edit the system prompt and clear the default config.
+    await requestJson(
+      server.baseUrl,
+      `/api/versions/${version.body.id}`,
+      jsonRequest('PATCH', { system_prompt: 'Updated persona.', default_config_id: null })
+    );
+    versions = (await requestJson<Version[]>(server.baseUrl, `/api/prompts/${promptId}/versions`)).body;
+    const patched = versions.find(v => v.id === version.body.id)!;
+    assert.equal(patched.system_prompt, 'Updated persona.');
+    assert.equal(patched.default_config_id, null);
+
+    // A default config belonging to a different prompt is rejected.
+    const otherPrompt = await requestJson<{ id: number }>(
+      server.baseUrl,
+      '/api/prompts',
+      jsonRequest('POST', { name: 'Stranger' })
+    );
+    const otherConfig = await requestJson<{ id: number }>(
+      server.baseUrl,
+      `/api/prompts/${otherPrompt.body.id}/configs`,
+      jsonRequest('POST', { name: 'Default' })
+    );
+    const rejected = await requestJson<{ error: string }>(
+      server.baseUrl,
+      `/api/versions/${version.body.id}`,
+      jsonRequest('PATCH', { default_config_id: otherConfig.body.id })
+    );
+    assert.equal(rejected.response.status, 400);
   });
 
   await t.test('deleting a prompt cascades to versions and test cases', async () => {

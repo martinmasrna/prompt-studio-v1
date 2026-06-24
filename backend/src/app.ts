@@ -6,6 +6,7 @@ import promptDetailRouter from './routes/promptDetail';
 import versionsRouter from './routes/versions';
 import llmRouter from './routes/llm';
 import testCasesRouter from './routes/testCases';
+import configsRouter from './routes/configs';
 import recordsRouter from './routes/records';
 
 const app = express();
@@ -22,6 +23,7 @@ app.use('/api/prompts', promptDetailRouter);
 app.use('/api/versions', versionsRouter);
 app.use('/api/llm', llmRouter);
 app.use('/api', testCasesRouter);
+app.use('/api', configsRouter);
 app.use('/api', recordsRouter);
 
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

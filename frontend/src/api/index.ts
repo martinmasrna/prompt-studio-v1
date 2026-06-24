@@ -12,6 +12,8 @@ export interface VersionInfo {
   text: string;
   note: string | null;
   is_current: 0 | 1;
+  system_prompt: string;
+  default_config_id: number | null;
 }
 
 export interface PromptDetail {
@@ -23,6 +25,8 @@ export interface PromptDetail {
     text: string;
     note: string | null;
     is_current: 1;
+    system_prompt: string;
+    default_config_id: number | null;
   } | null;
 }
 
@@ -46,7 +50,18 @@ export interface TestCase {
   name: string;
   description: string | null;
   variables: Record<string, string>;
-  system_prompt: string;
+  created_at: number;
+  updated_at: number;
+}
+
+export type TestCaseInput = Pick<TestCase, 'name' | 'description' | 'variables'>;
+
+// A reusable, prompt-scoped set of sampling parameters — selected independently
+// of the prompt version and the test scenario.
+export interface Config {
+  id: number;
+  prompt_id: number;
+  name: string;
   temperature: number;
   top_p: number;
   top_k: number;
@@ -56,9 +71,8 @@ export interface TestCase {
   updated_at: number;
 }
 
-export type TestCaseInput = Pick<TestCase,
-  'name' | 'description' | 'variables' | 'system_prompt' | 'temperature' |
-  'top_p' | 'top_k' | 'max_tokens' | 'enable_thinking'
+export type ConfigInput = Pick<Config,
+  'name' | 'temperature' | 'top_p' | 'top_k' | 'max_tokens' | 'enable_thinking'
 >;
 
 export type EvaluationSource = 'sandbox' | 'ab' | 'manual';
@@ -151,14 +165,20 @@ export const api = {
     delete: (id: number) =>
       apiFetch<{ ok: boolean }>(`/api/prompts/${id}`, { method: 'DELETE' }),
     versions: (id: number) => apiFetch<VersionInfo[]>(`/api/prompts/${id}/versions`),
-    createVersion: (id: number, data: { text: string; name: string; note?: string }) =>
+    createVersion: (id: number, data: {
+      text: string; name: string; note?: string;
+      system_prompt?: string; default_config_id?: number | null;
+    }) =>
       apiFetch<{ id: number }>(`/api/prompts/${id}/versions`, { method: 'POST', ...json(data) }),
   },
   versions: {
     setCurrent: (id: number) =>
       apiFetch<{ ok: boolean }>(`/api/versions/${id}`, { method: 'PATCH', ...json({ set_current: true }) }),
-    updateText: (id: number, text: string) =>
-      apiFetch<{ ok: boolean }>(`/api/versions/${id}`, { method: 'PATCH', ...json({ text }) }),
+    update: (id: number, data: Partial<{
+      text: string; name: string; note: string | null;
+      system_prompt: string; default_config_id: number | null;
+    }>) =>
+      apiFetch<{ ok: boolean }>(`/api/versions/${id}`, { method: 'PATCH', ...json(data) }),
     updateName: (id: number, name: string) =>
       apiFetch<{ ok: boolean }>(`/api/versions/${id}`, { method: 'PATCH', ...json({ name }) }),
     updateNote: (id: number, note: string | null) =>
@@ -175,6 +195,16 @@ export const api = {
       apiFetch<TestCase>(`/api/test-cases/${id}`, { method: 'PATCH', ...json(data) }),
     delete: (id: number) =>
       apiFetch<{ ok: boolean }>(`/api/test-cases/${id}`, { method: 'DELETE' }),
+  },
+  configs: {
+    list: (promptId: number) => apiFetch<Config[]>(`/api/prompts/${promptId}/configs`),
+    get: (id: number) => apiFetch<Config>(`/api/configs/${id}`),
+    create: (promptId: number, data: ConfigInput) =>
+      apiFetch<Config>(`/api/prompts/${promptId}/configs`, { method: 'POST', ...json(data) }),
+    update: (id: number, data: Partial<ConfigInput>) =>
+      apiFetch<Config>(`/api/configs/${id}`, { method: 'PATCH', ...json(data) }),
+    delete: (id: number) =>
+      apiFetch<{ ok: boolean }>(`/api/configs/${id}`, { method: 'DELETE' }),
   },
   records: {
     list: (promptId: number) =>

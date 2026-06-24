@@ -1,5 +1,5 @@
 import { Database as SQLiteDatabase } from 'node-sqlite3-wasm';
-import { BASE_SCHEMA_SQL, RESULTS_SCHEMA_SQL, TEST_CASES_SCHEMA_SQL } from './schema';
+import { BASE_SCHEMA_SQL, CONFIGS_SCHEMA_SQL, RESULTS_SCHEMA_SQL, TEST_CASES_SCHEMA_SQL } from './schema';
 
 export interface Migration {
   version: number;
@@ -59,6 +59,41 @@ function migrateLegacyBranches(db: SQLiteDatabase): void {
     DROP TABLE IF EXISTS prompt_tags;
     DROP TABLE IF EXISTS tags;
   `);
+}
+
+// The sampling parameters that, prior to v8, lived on every test case. These
+// defaults match the old test_cases column defaults; a test case carrying
+// exactly these is mapped to the "Default" config.
+interface BundledConfig {
+  temperature: number;
+  top_p: number;
+  top_k: number;
+  max_tokens: number;
+  enable_thinking: number;
+}
+
+const DEFAULT_CONFIG: BundledConfig = {
+  temperature: 0.7, top_p: 1.0, top_k: 40, max_tokens: 1024, enable_thinking: 0,
+};
+
+function configSignature(c: BundledConfig): string {
+  return `${c.temperature}|${c.top_p}|${c.top_k}|${c.max_tokens}|${c.enable_thinking}`;
+}
+
+function isDefaultConfig(c: BundledConfig): boolean {
+  return configSignature(c) === configSignature(DEFAULT_CONFIG);
+}
+
+// A readable, deterministic name for a non-default config — only the fields
+// that differ from the defaults are spelled out, so two distinct parameter
+// tuples never collapse to the same name.
+function deriveConfigName(c: BundledConfig): string {
+  if (isDefaultConfig(c)) return 'Default';
+  const parts = [`temp ${c.temperature}`, `${c.max_tokens} tok`];
+  if (c.top_p !== DEFAULT_CONFIG.top_p) parts.push(`top-p ${c.top_p}`);
+  if (c.top_k !== DEFAULT_CONFIG.top_k) parts.push(`top-k ${c.top_k}`);
+  if (c.enable_thinking) parts.push('thinking');
+  return parts.join(', ');
 }
 
 const migrations: Migration[] = [
@@ -189,6 +224,111 @@ const migrations: Migration[] = [
       // used to; it was never surfaced anywhere else, so it's removed.
       if (columnNames(db, 'prompts').includes('description')) {
         db.exec('ALTER TABLE prompts DROP COLUMN description');
+      }
+    },
+  },
+  {
+    version: 8,
+    name: 'decompose_test_config',
+    // Splits the bundled (variables + system_prompt + sampling params) test case
+    // into three independent axes: the scenario stays in test_cases (variables
+    // only), the sampling params move into a new prompt-scoped `configs` table
+    // (distinct tuples deduplicated), and the system prompt moves onto the
+    // prompt's current version. evaluations keep their own snapshot columns and
+    // are untouched.
+    up(db) {
+      if (!tableNames(db).includes('configs')) db.exec(CONFIGS_SCHEMA_SQL);
+
+      const versionColumns = columnNames(db, 'versions');
+      if (!versionColumns.includes('system_prompt')) {
+        db.exec("ALTER TABLE versions ADD COLUMN system_prompt TEXT NOT NULL DEFAULT ''");
+      }
+      if (!versionColumns.includes('default_config_id')) {
+        db.exec('ALTER TABLE versions ADD COLUMN default_config_id INTEGER REFERENCES configs(id) ON DELETE SET NULL');
+      }
+
+      // Nothing to decompose unless test_cases still carries the bundled columns.
+      if (!tableNames(db).includes('test_cases')) return;
+      if (!columnNames(db, 'test_cases').includes('temperature')) return;
+
+      interface TestCaseRow extends BundledConfig {
+        id: number;
+        prompt_id: number;
+        system_prompt: string;
+      }
+      const rows = db.all(
+        `SELECT id, prompt_id, system_prompt,
+                temperature, top_p, top_k, max_tokens, enable_thinking
+         FROM test_cases ORDER BY prompt_id, id`
+      ) as unknown as TestCaseRow[];
+
+      // Group test cases by prompt so configs are deduplicated per prompt.
+      const byPrompt = new Map<number, TestCaseRow[]>();
+      for (const row of rows) {
+        const list = byPrompt.get(row.prompt_id) ?? [];
+        list.push(row);
+        byPrompt.set(row.prompt_id, list);
+      }
+
+      for (const [promptId, testCases] of byPrompt) {
+        // 1. Create one config per distinct parameter tuple (first appearance wins).
+        const configIdBySignature = new Map<string, number>();
+        const usedNames = new Set<string>();
+        for (const tc of testCases) {
+          const signature = configSignature(tc);
+          if (configIdBySignature.has(signature)) continue;
+
+          let name = deriveConfigName(tc);
+          for (let suffix = 2; usedNames.has(name.toLowerCase()); suffix++) {
+            name = `${deriveConfigName(tc)} (${suffix})`;
+          }
+          usedNames.add(name.toLowerCase());
+
+          const result = db.run(
+            `INSERT INTO configs (prompt_id, name, temperature, top_p, top_k, max_tokens, enable_thinking)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [promptId, name, tc.temperature, tc.top_p, tc.top_k, tc.max_tokens, tc.enable_thinking]
+          );
+          configIdBySignature.set(signature, Number(result.lastInsertRowid));
+        }
+
+        // 2. Point every version of this prompt at the "Default" config (or, if
+        //    none of its test cases used the defaults, the first config created).
+        const defaultRow = db.get(
+          "SELECT id FROM configs WHERE prompt_id = ? ORDER BY (name = 'Default') DESC, id LIMIT 1",
+          [promptId]
+        ) as { id: number } | null;
+        const defaultConfigId = defaultRow?.id ?? null;
+        if (defaultConfigId !== null) {
+          db.run('UPDATE versions SET default_config_id = ? WHERE prompt_id = ?', [defaultConfigId, promptId]);
+        }
+
+        // 3. Relocate a non-empty system prompt onto the current version. A test
+        //    case has no link to a version, so the most recent test case that
+        //    carried a system prompt is attached to the prompt's current version,
+        //    and that version's default config is set to the one the same test
+        //    case used — reconstructing the original bundle on the new axes.
+        const bearer = testCases
+          .filter(tc => (tc.system_prompt ?? '').trim() !== '')
+          .sort((a, b) => b.id - a.id)[0];
+        if (bearer) {
+          const current = db.get(
+            'SELECT id FROM versions WHERE prompt_id = ? AND is_current = 1',
+            [promptId]
+          ) as { id: number } | null;
+          if (current) {
+            const bearerConfigId = configIdBySignature.get(configSignature(bearer)) ?? defaultConfigId;
+            db.run(
+              'UPDATE versions SET system_prompt = ?, default_config_id = ? WHERE id = ?',
+              [bearer.system_prompt, bearerConfigId, current.id]
+            );
+          }
+        }
+      }
+
+      // 4. Drop the now-relocated columns from test_cases, leaving the scenario.
+      for (const column of ['system_prompt', 'temperature', 'top_p', 'top_k', 'max_tokens', 'enable_thinking']) {
+        db.exec(`ALTER TABLE test_cases DROP COLUMN ${column}`);
       }
     },
   },

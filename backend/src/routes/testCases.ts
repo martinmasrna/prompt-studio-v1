@@ -14,12 +14,6 @@ const router = Router();
 const DEFAULTS: Omit<TestCaseValues, 'name'> = {
   description: null,
   variables: {},
-  system_prompt: '',
-  temperature: 0.7,
-  top_p: 1,
-  top_k: 40,
-  max_tokens: 1024,
-  enable_thinking: false,
 };
 
 class ValidationError extends Error {}
@@ -27,20 +21,6 @@ class ValidationError extends Error {}
 function stringRecord(value: unknown): value is Record<string, string> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
     && Object.values(value).every(item => typeof item === 'string');
-}
-
-function validateNumber(
-  value: unknown,
-  field: string,
-  min: number,
-  max: number,
-  integer = false
-): number {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max) {
-    throw new ValidationError(`${field} must be a number between ${min} and ${max}`);
-  }
-  if (integer && !Number.isInteger(value)) throw new ValidationError(`${field} must be an integer`);
-  return value;
 }
 
 function parseValues(body: unknown, partial: boolean): Partial<TestCaseValues> {
@@ -69,20 +49,6 @@ function parseValues(body: unknown, partial: boolean): Partial<TestCaseValues> {
       throw new ValidationError('variables must be an object whose values are strings');
     }
     result.variables = input.variables;
-  }
-  if ('system_prompt' in input) {
-    if (typeof input.system_prompt !== 'string') throw new ValidationError('system_prompt must be a string');
-    result.system_prompt = input.system_prompt;
-  }
-  if ('temperature' in input) result.temperature = validateNumber(input.temperature, 'temperature', 0, 2);
-  if ('top_p' in input) result.top_p = validateNumber(input.top_p, 'top_p', 0, 1);
-  if ('top_k' in input) result.top_k = validateNumber(input.top_k, 'top_k', 1, 200, true);
-  if ('max_tokens' in input) result.max_tokens = validateNumber(input.max_tokens, 'max_tokens', 64, 32768, true);
-  if ('enable_thinking' in input) {
-    if (typeof input.enable_thinking !== 'boolean') {
-      throw new ValidationError('enable_thinking must be a boolean');
-    }
-    result.enable_thinking = input.enable_thinking;
   }
   return result;
 }

@@ -5,8 +5,10 @@ import { ref, computed, watch } from 'vue';
 import { api } from '../api';
 import {
   activePromptData, activeVersionId, activeVersionText,
+  activeSystemPrompt, savedSystemPrompt, applyActiveVersion,
   versions, variableValues, showSaveModal, newVersionDraftText,
 } from '../store/editor';
+import { selectedConfigId } from '../store/configs';
 import { useAppState } from '../store/app';
 import { extractVariables } from '../utils/variables';
 import PromptEditor from '../components/PromptEditor.vue';
@@ -29,8 +31,13 @@ watch(activePromptData, data => {
 }, { immediate: true });
 
 // ── Dirty state ────────────────────────────────────────────────────────────────
-// True when the editor text differs from the saved text of the selected version.
-const isDirty = computed(() => localText.value !== activeVersionText.value);
+// True when the editor text or the version's system prompt differs from what was
+// last saved for the selected version. (The system prompt is edited in the
+// sandbox / A·B advanced panels but belongs to the version.)
+const isDirty = computed(() =>
+  localText.value !== activeVersionText.value
+  || activeSystemPrompt.value !== savedSystemPrompt.value
+);
 
 // ── Versions UI ────────────────────────────────────────────────────────────────
 // The header dropdown switches the active version; the "Versions" popover holds
@@ -100,8 +107,7 @@ async function selectVersion(versionId: number) {
   if (isDirty.value && !confirm('You have unsaved changes that will be lost. Switch version anyway?')) {
     return;
   }
-  activeVersionId.value = versionId;
-  activeVersionText.value = v.text;
+  applyActiveVersion(v);
   localText.value = v.text;
   await api.versions.setCurrent(versionId);
   for (const item of versions.value) item.is_current = item.id === versionId ? 1 : 0;
@@ -140,11 +146,21 @@ async function saveChanges() {
   if (!activeVersionId.value || savingChanges.value) return;
   savingChanges.value = true;
   try {
-    await api.versions.updateText(activeVersionId.value, localText.value);
+    // Save the version's text, system prompt, and default config together.
+    await api.versions.update(activeVersionId.value, {
+      text: localText.value,
+      system_prompt: activeSystemPrompt.value,
+      default_config_id: selectedConfigId.value,
+    });
     activeVersionText.value = localText.value;
-    // Keep the in-memory version list in sync so other views see the new text
+    savedSystemPrompt.value = activeSystemPrompt.value;
+    // Keep the in-memory version list in sync so other views see the new state
     const v = versions.value.find(v => v.id === activeVersionId.value);
-    if (v) v.text = localText.value;
+    if (v) {
+      v.text = localText.value;
+      v.system_prompt = activeSystemPrompt.value;
+      v.default_config_id = selectedConfigId.value;
+    }
   } catch (e: unknown) {
     alert(e instanceof Error ? e.message : 'Could not save changes');
   } finally {
@@ -163,8 +179,7 @@ async function deleteVersion(versionId: number, name: string) {
     if (activeVersionId.value === versionId) {
       const cur = versions.value.find(v => v.is_current) ?? versions.value[0];
       if (cur) {
-        activeVersionId.value = cur.id;
-        activeVersionText.value = cur.text;
+        applyActiveVersion(cur);
         localText.value = cur.text;
       }
     }
@@ -260,8 +275,6 @@ async function deleteVersion(versionId: number, name: string) {
                   />
                 </div>
 
-                <span v-if="v.id === activeVersionId" class="ver-current">Current</span>
-
                 <div class="version-actions">
                   <button
                     class="ver-kebab"
@@ -291,6 +304,18 @@ async function deleteVersion(versionId: number, name: string) {
         </div>
       </div>
     </div>
+    </div>
+
+    <!-- System prompt — part of the version, saved alongside the prompt text -->
+    <div class="system-prompt-section">
+      <p class="section-label">System prompt</p>
+      <textarea
+        v-model="activeSystemPrompt"
+        class="system-prompt-input"
+        placeholder="Optional system instruction…"
+        rows="3"
+        spellcheck="false"
+      />
     </div>
 
     <!-- Prompt text -->
@@ -365,6 +390,27 @@ async function deleteVersion(versionId: number, name: string) {
    fixed header / version history / action bar, and scrolls internally. This is
    why the panel itself doesn't scroll — no second, parallel scrollbar. */
 .prompt-text-section { display: flex; flex-direction: column; gap: 10px; flex: 1; min-height: 0; }
+
+/* ── System prompt ── */
+.system-prompt-section { display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; }
+.system-prompt-input {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid #ececec;
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  min-height: 64px;
+  max-height: 200px;
+  padding: 10px 12px;
+  resize: vertical;
+  overflow: auto;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+.system-prompt-input:hover { border-color: #dddddd; }
+.system-prompt-input:focus { outline: none; border-color: #b8b8b8; box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.035); }
 
 .prompt-text-header {
   display: flex;

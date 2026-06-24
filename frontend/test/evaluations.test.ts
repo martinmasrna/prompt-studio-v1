@@ -1,31 +1,31 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { activePromptData, variableValues, versions } from '../src/store/editor';
+import { activePromptData, activeSystemPrompt, variableValues, versions } from '../src/store/editor';
 import { activeModelId, availableModels } from '../src/store/settings';
+import { selectedTestCaseId, testCases } from '../src/store/testCases';
 import {
-  enableThinking, maxTokens, selectedTestCaseId, systemPrompt,
-  temperature, testCases, topK, topP,
-} from '../src/store/testCases';
+  enableThinking, maxTokens, temperature, topK, topP,
+} from '../src/store/configs';
 import { captureEvaluationContext, completeEvaluation } from '../src/utils/evaluations';
 
 beforeEach(() => {
   activePromptData.value = {
     id: 5,
     name: 'Prompt',
-    description: null,
     current_version: null,
   };
-  versions.value = [{ id: 8, name: 'v2', text: 'Ask {{query}}', note: null, is_current: 1 }];
+  versions.value = [{
+    id: 8, name: 'v2', text: 'Ask {{query}}', note: null, is_current: 1,
+    system_prompt: 'System', default_config_id: null,
+  }];
   variableValues.value = { query: 'original', unused: 'kept' };
   availableModels.value = [{ id: 'gemma', label: 'Gemma', model: 'gemma.gguf', uri: 'http://private' }];
   activeModelId.value = 'gemma';
   testCases.value = [{
     id: 3, prompt_id: 5, name: 'Scenario', description: null,
-    variables: { query: 'original' }, system_prompt: 'System', temperature: 0.2,
-    top_p: 0.8, top_k: 20, max_tokens: 512, enable_thinking: true,
-    created_at: 1, updated_at: 1,
+    variables: { query: 'original' }, created_at: 1, updated_at: 1,
   }];
   selectedTestCaseId.value = 3;
-  systemPrompt.value = 'System';
+  activeSystemPrompt.value = 'System';
   temperature.value = 0.2;
   topP.value = 0.8;
   topK.value = 20;

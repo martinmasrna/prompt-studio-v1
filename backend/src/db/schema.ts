@@ -36,6 +36,24 @@ export const TEST_CASES_SCHEMA_SQL = `
   CREATE INDEX idx_test_cases_prompt_id ON test_cases(prompt_id);
 `;
 
+export const CONFIGS_SCHEMA_SQL = `
+  CREATE TABLE configs (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    prompt_id       INTEGER NOT NULL REFERENCES prompts(id) ON DELETE CASCADE,
+    name            TEXT NOT NULL COLLATE NOCASE,
+    temperature     REAL NOT NULL DEFAULT 0.7 CHECK (temperature >= 0 AND temperature <= 2),
+    top_p           REAL NOT NULL DEFAULT 1.0 CHECK (top_p >= 0 AND top_p <= 1),
+    top_k           INTEGER NOT NULL DEFAULT 40 CHECK (top_k >= 1 AND top_k <= 200),
+    max_tokens      INTEGER NOT NULL DEFAULT 1024 CHECK (max_tokens >= 64 AND max_tokens <= 32768),
+    enable_thinking INTEGER NOT NULL DEFAULT 0 CHECK (enable_thinking IN (0, 1)),
+    created_at      INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at      INTEGER NOT NULL DEFAULT (unixepoch()),
+    UNIQUE (prompt_id, name)
+  );
+
+  CREATE INDEX idx_configs_prompt_id ON configs(prompt_id);
+`;
+
 export const RESULTS_SCHEMA_SQL = `
   CREATE TABLE evaluation_batches (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,

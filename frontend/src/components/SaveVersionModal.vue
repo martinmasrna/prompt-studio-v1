@@ -5,8 +5,10 @@ import { ref, watch } from 'vue';
 import { api } from '../api';
 import {
   activePromptData, activeVersionId, activeVersionText,
+  activeSystemPrompt, savedSystemPrompt,
   versions, showSaveModal, newVersionDraftText,
 } from '../store/editor';
+import { selectedConfigId } from '../store/configs';
 
 const saveName = ref('');
 const saveNote = ref('');
@@ -17,15 +19,20 @@ async function confirmSaveVersion() {
   saving.value = true;
   try {
     const text = newVersionDraftText.value ?? activeVersionText.value;
+    // The new version captures the current system prompt and the selected config
+    // as its default — both are part of the version, not the scenario.
     const result = await api.prompts.createVersion(activePromptData.value.id, {
       text,
       name: saveName.value.trim(),
       note: saveNote.value.trim() || undefined,
+      system_prompt: activeSystemPrompt.value,
+      default_config_id: selectedConfigId.value,
     });
     // Refresh version list and update active version
     versions.value = await api.prompts.versions(activePromptData.value.id);
     activeVersionId.value = result.id;
     activeVersionText.value = text;
+    savedSystemPrompt.value = activeSystemPrompt.value;
     showSaveModal.value = false;
     saveName.value = '';
     saveNote.value = '';

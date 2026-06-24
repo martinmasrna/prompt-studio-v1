@@ -8,6 +8,7 @@
 // saving a new version flips the old current off inside one transaction.
 import { Router } from 'express';
 import db from '../db';
+import { configBelongsToPrompt } from '../repositories/configs';
 
 const router = Router();
 
@@ -23,7 +24,7 @@ router.get('/:id', (req, res) => {
   if (!prompt) { res.status(404).json({ error: 'Prompt not found' }); return; }
 
   const currentVersion = db.get(
-    'SELECT id, name, text, note, is_current FROM versions WHERE prompt_id = ? AND is_current = 1',
+    'SELECT id, name, text, note, is_current, system_prompt, default_config_id FROM versions WHERE prompt_id = ? AND is_current = 1',
     [id]
   ) as Record<string, unknown> | null;
 
@@ -34,7 +35,7 @@ router.get('/:id', (req, res) => {
 router.get('/:id/versions', (req, res) => {
   const promptId = Number(req.params.id);
   const versions = db.all(
-    'SELECT id, name, text, note, is_current FROM versions WHERE prompt_id = ? ORDER BY id DESC',
+    'SELECT id, name, text, note, is_current, system_prompt, default_config_id FROM versions WHERE prompt_id = ? ORDER BY id DESC',
     [promptId]
   ) as unknown as object[];
   res.json(versions);
@@ -43,17 +44,28 @@ router.get('/:id/versions', (req, res) => {
 // --- POST /api/prompts/:id/versions ---
 router.post('/:id/versions', (req, res) => {
   const promptId = Number(req.params.id);
-  const { text, name, note } = req.body as { text: string; name?: string; note?: string };
+  const { text, name, note, system_prompt, default_config_id } = req.body as {
+    text: string; name?: string; note?: string;
+    system_prompt?: string; default_config_id?: number | null;
+  };
 
   if (typeof text !== 'string') { res.status(400).json({ error: 'text is required' }); return; }
   if (!name || !name.trim()) { res.status(400).json({ error: 'name is required' }); return; }
+  if (system_prompt !== undefined && typeof system_prompt !== 'string') {
+    res.status(400).json({ error: 'system_prompt must be a string' });
+    return;
+  }
+  if (!configBelongsToPrompt(default_config_id, promptId)) {
+    res.status(400).json({ error: 'default_config_id must reference a config of this prompt' });
+    return;
+  }
 
   db.run('BEGIN');
   try {
     db.run('UPDATE versions SET is_current = 0 WHERE prompt_id = ?', [promptId]);
     const result = db.run(
-      'INSERT INTO versions (prompt_id, name, text, note, is_current) VALUES (?, ?, ?, ?, 1)',
-      [promptId, name.trim(), text, note?.trim() || null]
+      'INSERT INTO versions (prompt_id, name, text, note, is_current, system_prompt, default_config_id) VALUES (?, ?, ?, ?, 1, ?, ?)',
+      [promptId, name.trim(), text, note?.trim() || null, system_prompt ?? '', default_config_id ?? null]
     );
     db.run('COMMIT');
     res.status(201).json({ id: Number(result.lastInsertRowid) });

@@ -1,25 +1,25 @@
 <script setup lang="ts">
-// Right panel of the Overview module. Sends the configured prompt to the LLM
-// and displays the response. All LLM config state is local — it doesn't need
-// to survive prompt switches.
+// Right panel of the Overview module. Sends the configured prompt to the LLM and
+// displays the response. Organized as two boxes — Variables (the scenario, driven
+// by a saved test) and Parameters (the sampling config) — each with its own
+// corner selector. The system prompt is part of the version and is edited in the
+// left panel. All run output state is local; it doesn't survive prompt switches.
 import { ref, computed } from 'vue';
 import { renderContent } from '../utils/renderContent';
 import { api } from '../api';
-import { activeVersionId, activeVersionText, variableValues, sandboxOutput, addSandboxEntry } from '../store/editor';
+import { activeVersionId, activeVersionText, activeSystemPrompt, variableValues, sandboxOutput, addSandboxEntry } from '../store/editor';
 import { activeModelId } from '../store/settings';
-import {
-  systemPrompt, temperature, topP, topK, maxTokens, enableThinking,
-  selectedTestCase, selectedTestCaseId, isTestDirty, testSaving, saveNewTest, saveSelectedTest,
-  deleteSelectedTest,
-} from '../store/testCases';
+import { temperature, topP, topK, maxTokens, enableThinking } from '../store/configs';
 import TestCaseControls from '../components/TestCaseControls.vue';
-import ResultActions from '../components/ResultActions.vue';
+import ConfigControls from '../components/ConfigControls.vue';
 import VariablesPanel from '../components/VariablesPanel.vue';
+import ResultActions from '../components/ResultActions.vue';
 import { extractVariables, missingVariables, substituteVariables } from '../utils/variables';
 import { captureEvaluationContext, completeEvaluation } from '../utils/evaluations';
 
-// ── Config state ───────────────────────────────────────────────────────────────
-const advancedOpen       = ref(false);
+// Literal "{{variables}}" for the empty-state hint — kept as data so it isn't
+// parsed as a template interpolation.
+const variablesToken = '{{variables}}';
 
 // The user message sent to the LLM is always the active prompt text with variables substituted.
 const userMessage = computed(() => substituteVariables(activeVersionText.value, variableValues.value));
@@ -51,7 +51,7 @@ async function runLLM() {
 
   try {
     const result = await api.llm.run({
-      system_prompt: systemPrompt.value || undefined,
+      system_prompt: activeSystemPrompt.value || undefined,
       user_message:  userMessage.value,
       model_id:      activeModelId.value ?? undefined,
       temperature:   temperature.value,
@@ -84,155 +84,68 @@ function markSaved(id: number) {
 const renderedOutput = computed(() =>
   sandboxOutput.value?.text ? renderContent(sandboxOutput.value.text) : ''
 );
-
-const hasSelectedTest = computed(() => selectedTestCaseId.value !== null);
-const canSaveTest = computed(() => hasSelectedTest.value && isTestDirty.value && !testSaving.value);
-const canDeleteTest = computed(() => hasSelectedTest.value && !testSaving.value);
-
-async function saveTest() {
-  try {
-    await saveSelectedTest();
-  } catch {
-    // The shared error message is rendered by TestCaseControls.
-  }
-}
-
-async function saveTestAsNew() {
-  const name = prompt('Name this test');
-  if (!name?.trim()) return;
-  try {
-    await saveNewTest(name);
-  } catch {
-    // The shared error message is rendered by TestCaseControls.
-  }
-}
-
-async function deleteTest() {
-  const selected = selectedTestCase.value;
-  if (!selected || !confirm(`Delete saved test "${selected.name}"?`)) return;
-  try {
-    await deleteSelectedTest();
-  } catch (error) {
-    alert(error instanceof Error ? error.message : 'Could not delete test');
-  }
-}
-
 </script>
 
 <template>
   <div class="sandbox-panel">
-    <!-- ── Configuration ─────────────────────────────── -->
-    <div class="config-section">
-      <TestCaseControls :show-actions="false" variant="header" />
-
-      <!-- Variables (shared state with LeftPanel) -->
-      <VariablesPanel :detected-vars="detectedVars" />
-
-      <!-- Advanced settings: system prompt, sampling params, thinking mode -->
-      <div class="field-block">
-        <button class="collapsible-label" @click="advancedOpen = !advancedOpen">
-          <span class="field-label">Advanced settings</span>
-          <span class="collapse-chevron" :class="{ open: advancedOpen }">▶</span>
-        </button>
-
-        <div v-if="advancedOpen" class="advanced-body">
-          <div class="field-block">
-            <label class="field-label">System prompt</label>
-            <textarea
-              v-model="systemPrompt"
-              class="config-textarea"
-              placeholder="Optional system instruction…"
-              rows="3"
-              spellcheck="false"
-            />
-          </div>
-
-          <!-- Sliders & inputs -->
-          <div class="param-grid">
-            <div class="param">
-              <label class="field-label">Temperature <span class="param-value">{{ temperature.toFixed(1) }}</span></label>
-              <input v-model.number="temperature" aria-label="Temperature" type="range" min="0" max="2" step="0.1" class="slider" />
-            </div>
-            <div class="param">
-              <label class="field-label">Top-P <span class="param-value">{{ topP.toFixed(2) }}</span></label>
-              <input v-model.number="topP" type="range" min="0" max="1" step="0.01" class="slider" />
-            </div>
-            <div class="param">
-              <label class="field-label">Top-K</label>
-              <input v-model.number="topK" type="number" min="1" max="200" class="num-input" />
-            </div>
-            <div class="param">
-              <label class="field-label">Max tokens</label>
-              <input v-model.number="maxTokens" type="number" min="64" max="32768" class="num-input" />
-            </div>
-          </div>
-
-          <label class="toggle-row">
-            <span class="toggle-label">Thinking mode</span>
-            <button
-              class="toggle-switch"
-              :class="{ on: enableThinking }"
-              role="switch"
-              :aria-checked="enableThinking"
-              @click="enableThinking = !enableThinking"
-            >
-              <span class="toggle-thumb" />
-            </button>
-          </label>
-        </div>
+    <!-- ── Variables box ─────────────────────────────── -->
+    <section class="panel-box">
+      <header class="box-header">
+        <h3 class="box-title">Variables</h3>
+        <TestCaseControls compact />
+      </header>
+      <div class="box-body">
+        <VariablesPanel v-if="detectedVars.length" :detected-vars="detectedVars" hide-label />
+        <p v-else class="box-empty">This prompt has no <code>{{ variablesToken }}</code> yet.</p>
       </div>
+    </section>
 
-      <div class="config-actions">
-        <div class="test-action-group" aria-label="Test actions">
-          <button
-            class="test-icon-btn"
-            :disabled="!canSaveTest"
-            title="Save test"
-            aria-label="Save test"
-            @click="saveTest"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
-              <path d="M17 21v-8H7v8" />
-              <path d="M7 3v5h8" />
-            </svg>
-          </button>
-
-          <button
-            class="test-icon-btn"
-            :disabled="testSaving"
-            title="Save as new test"
-            aria-label="Save as new test"
-            @click="saveTestAsNew"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-              <path d="M14 2v6h6" />
-              <path d="M12 18v-6" />
-              <path d="M9 15h6" />
-            </svg>
-          </button>
-
-          <button
-            class="test-icon-btn danger"
-            :disabled="!canDeleteTest"
-            title="Delete test"
-            aria-label="Delete test"
-            @click="deleteTest"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M3 6h18" />
-              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-              <path d="M10 11v6M14 11v6" />
-              <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-            </svg>
-          </button>
+    <!-- ── Parameters box ────────────────────────────── -->
+    <section class="panel-box">
+      <header class="box-header">
+        <h3 class="box-title">Parameters</h3>
+        <ConfigControls compact />
+      </header>
+      <div class="box-body">
+        <div class="param-grid">
+          <div class="param">
+            <label class="field-label">Temperature <span class="param-value">{{ temperature.toFixed(1) }}</span></label>
+            <input v-model.number="temperature" aria-label="Temperature" type="range" min="0" max="2" step="0.1" class="slider" />
+          </div>
+          <div class="param">
+            <label class="field-label">Top-P <span class="param-value">{{ topP.toFixed(2) }}</span></label>
+            <input v-model.number="topP" type="range" min="0" max="1" step="0.01" class="slider" />
+          </div>
+          <div class="param">
+            <label class="field-label">Top-K</label>
+            <input v-model.number="topK" type="number" min="1" max="200" class="num-input" />
+          </div>
+          <div class="param">
+            <label class="field-label">Max tokens</label>
+            <input v-model.number="maxTokens" type="number" min="64" max="32768" class="num-input" />
+          </div>
         </div>
 
+        <label class="toggle-row">
+          <span class="toggle-label">Thinking mode</span>
+          <button
+            class="toggle-switch"
+            :class="{ on: enableThinking }"
+            role="switch"
+            :aria-checked="enableThinking"
+            @click="enableThinking = !enableThinking"
+          >
+            <span class="toggle-thumb" />
+          </button>
+        </label>
+      </div>
+    </section>
+
+    <!-- ── Run ───────────────────────────────────────── -->
+    <div class="run-row">
       <button class="run-btn" :class="{ running }" :disabled="running" @click="runLLM">
         {{ running ? 'Running…' : 'Run' }}
       </button>
-      </div>
     </div>
 
     <!-- ── Output ─────────────────────────────────────── -->
@@ -252,18 +165,18 @@ async function deleteTest() {
         <div v-if="sandboxOutput.text" class="output-text markdown-body" v-html="renderedOutput" />
         <p v-else class="output-empty">(model returned an empty response)</p>
         <div class="output-meta">
-          <div class="meta-stats">
-            <span v-if="sandboxOutput.tokens_used != null" class="meta-chip">
-              {{ sandboxOutput.tokens_used }} tokens
-            </span>
-            <span class="meta-chip">{{ sandboxOutput.latency_ms }} ms</span>
-          </div>
           <ResultActions
             :evaluation="sandboxOutput.evaluation"
             :saved-id="sandboxOutput.savedEvaluationId"
             :copy-text="sandboxOutput.text"
             @saved="markSaved"
           />
+          <div class="meta-stats">
+            <span v-if="sandboxOutput.tokens_used != null" class="meta-chip">
+              {{ sandboxOutput.tokens_used }} tokens
+            </span>
+            <span class="meta-chip">{{ sandboxOutput.latency_ms }} ms</span>
+          </div>
         </div>
       </template>
     </div>
@@ -275,23 +188,47 @@ async function deleteTest() {
 .sandbox-panel {
   display: flex;
   flex-direction: column;
-  gap: 0;
+  gap: 16px;
   overflow-y: auto;
   height: 100%;
   background: var(--bg);
+  padding: 24px 28px;
 }
 
-/* ── Config ── */
-.config-section {
+/* ── Boxes ── */
+.panel-box {
   display: flex;
   flex-direction: column;
-  gap: 18px;
-  padding: 28px 28px 20px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
   background: var(--bg);
-  border-bottom: 1px solid var(--border);
+  overflow: hidden;
 }
 
-.field-block { display: flex; flex-direction: column; gap: 7px; }
+.box-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-sunken);
+}
+
+.box-title {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.box-body { padding: 16px; }
+
+.box-empty { color: var(--text-faint); font-size: 12.5px; margin: 0; }
+.box-empty code { font-family: var(--font-mono); font-size: 11.5px; background: var(--bg-selected); padding: 1px 5px; border-radius: 3px; }
 
 .field-label {
   display: flex;
@@ -302,61 +239,6 @@ async function deleteTest() {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-muted);
-}
-
-.config-textarea {
-  width: 100%;
-  background: var(--bg);
-  border: 1px solid #ececec;
-  border-radius: 6px;
-  color: var(--text-primary);
-  font-family: var(--font-mono);
-  font-size: 12.5px;
-  line-height: 1.6;
-  min-height: 76px;
-  max-height: 220px;
-  padding: 10px 12px;
-  resize: vertical;
-  overflow: auto;
-  transition: border-color 0.12s, box-shadow 0.12s, background 0.12s;
-}
-.config-textarea:hover { border-color: #dddddd; }
-.config-textarea:focus {
-  outline: none;
-  border-color: #b8b8b8;
-  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.035);
-}
-
-/* Chevron sits directly beside the label so the disclosure target reads as
-   one unit, instead of floating at the far edge. */
-.collapsible-label {
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 6px;
-  align-self: flex-start;
-  background: none;
-  border: none;
-  padding: 0;
-  cursor: pointer;
-}
-.collapse-chevron {
-  font-size: 8px;
-  color: var(--text-muted);
-  transition: transform 0.15s;
-  display: inline-block;
-}
-.collapse-chevron.open { transform: rotate(90deg); }
-
-/* Contents of the Advanced settings disclosure — indented under its header so
-   the grouping reads as containment. */
-.advanced-body {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  margin-top: 12px;
-  padding-left: 12px;
-  border-left: 1px solid var(--border);
 }
 
 /* Params */
@@ -380,8 +262,7 @@ async function deleteTest() {
 }
 .num-input:focus { outline: none; border-color: #aaa; }
 
-/* Thinking toggle — label and switch grouped together rather than spread to
-   opposite edges, so the label↔control relationship stays legible. */
+/* Thinking toggle */
 .toggle-row {
   display: flex;
   align-items: center;
@@ -389,6 +270,7 @@ async function deleteTest() {
   gap: 10px;
   align-self: flex-start;
   cursor: pointer;
+  margin-top: 16px;
 }
 
 .toggle-label {
@@ -427,54 +309,12 @@ async function deleteTest() {
 }
 .toggle-switch.on .toggle-thumb { transform: translateX(14px); }
 
-.config-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  margin-top: 2px;
-  padding-top: 14px;
-}
-
-.test-action-group {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-
-.test-icon-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 34px;
-  padding: 0;
-  background: none;
-  border: none;
-  border-radius: 5px;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: color 0.12s, background 0.12s, opacity 0.12s;
-}
-.test-icon-btn:hover:not(:disabled) {
-  color: var(--text-primary);
-  background: var(--bg-hover);
-}
-.test-icon-btn.danger:hover:not(:disabled) {
-  color: #b33;
-  background: #fff5f5;
-}
-.test-icon-btn:disabled {
-  opacity: 0.42;
-  cursor: default;
-}
-
-/* Run button */
+/* Run */
+.run-row { display: flex; justify-content: flex-end; }
 .run-btn {
   flex: 0 0 auto;
   min-height: 34px;
-  padding: 7px 24px;
+  padding: 7px 28px;
   background: #1a1a1a;
   border: none;
   border-radius: 5px;
@@ -483,7 +323,6 @@ async function deleteTest() {
   font-family: inherit;
   font-weight: 600;
   cursor: pointer;
-  letter-spacing: 0;
   transition: background 0.12s, opacity 0.12s;
 }
 .run-btn:hover:not(:disabled) { background: #333; }
@@ -492,8 +331,8 @@ async function deleteTest() {
 /* ── Output ── */
 .output-section {
   flex: 1;
-  padding: 22px 28px;
-  background: var(--bg);
+  min-height: 120px;
+  padding: 4px 2px;
 }
 
 .run-error {
@@ -531,10 +370,10 @@ async function deleteTest() {
 }
 .meta-stats { display: flex; align-items: center; gap: 8px; }
 .meta-chip {
-  padding: 2px 8px;
+  padding: 4px 8px;
   background: var(--bg-selected);
-  border-radius: 3px;
-  font-size: 11px;
+  border-radius: 5px;
+  font-size: 10.5px;
   color: var(--text-muted);
   font-family: var(--font-mono);
 }
@@ -566,5 +405,4 @@ async function deleteTest() {
 .output-text :deep(hr)            { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 .output-text :deep(strong)        { font-weight: 600; }
 .output-text :deep(a)             { color: var(--text-primary); text-decoration: underline; }
-
 </style>

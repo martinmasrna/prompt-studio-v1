@@ -8,12 +8,6 @@ interface TestCaseResponse {
   name: string;
   description: string | null;
   variables: Record<string, string>;
-  system_prompt: string;
-  temperature: number;
-  top_p: number;
-  top_k: number;
-  max_tokens: number;
-  enable_thinking: boolean;
 }
 
 test('test-case API', async t => {
@@ -35,22 +29,13 @@ test('test-case API', async t => {
     );
     assert.equal(created.response.status, 201);
     assert.deepEqual(created.body.variables, { query: 'Žiadosť\n第二行' });
-    assert.equal(created.body.temperature, 0.7);
-    assert.equal(created.body.top_p, 1);
-    assert.equal(created.body.top_k, 40);
-    assert.equal(created.body.max_tokens, 1024);
-    assert.equal(created.body.enable_thinking, false);
+    assert.equal(created.body.description, null);
   });
 
-  await t.test('rejects invalid fields and parameter ranges', async () => {
+  await t.test('rejects invalid fields', async () => {
     const invalidBodies = [
       { name: '', variables: {} },
       { name: 'bad variables', variables: { query: 4 } },
-      { name: 'bad temperature', temperature: 2.1 },
-      { name: 'bad top p', top_p: -0.1 },
-      { name: 'bad top k', top_k: 1.5 },
-      { name: 'bad max tokens', max_tokens: 63 },
-      { name: 'bad thinking', enable_thinking: 1 },
     ];
     for (const body of invalidBodies) {
       const result = await requestJson<{ error: string }>(
@@ -92,15 +77,13 @@ test('test-case API', async t => {
       jsonRequest('PATCH', {
         name: 'Renamed',
         description: 'A durable case',
-        temperature: 0.4,
-        enable_thinking: true,
+        variables: { query: 'updated' },
       })
     );
     assert.equal(updated.response.status, 200);
     assert.equal(updated.body.name, 'Renamed');
     assert.equal(updated.body.description, 'A durable case');
-    assert.equal(updated.body.temperature, 0.4);
-    assert.equal(updated.body.enable_thinking, true);
+    assert.deepEqual(updated.body.variables, { query: 'updated' });
 
     const deleted = await requestJson<{ ok: boolean }>(
       server.baseUrl,
