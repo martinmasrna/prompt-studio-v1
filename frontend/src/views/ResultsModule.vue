@@ -152,10 +152,9 @@ async function submitFlag() {
   flagSaving.value = true;
   flagError.value = null;
   try {
-    const issue = await api.issues.create(evaluation.prompt_id, {
+    const issue = await api.issues.createForEvaluation(evaluation.id, {
       title: flagTitle.value.trim(),
       note: flagNote.value.trim() || null,
-      evaluation_id: evaluation.id,
     });
     applyIssue(evaluation, issue);
     flagFor.value = null;

@@ -6,10 +6,7 @@ import { applyConfigById } from './configs';
 
 export type ModuleTab = 'overview' | 'ab-tester' | 'results' | 'issues';
 
-export interface SandboxEntry {
-  id: number;
-  timestamp: number;
-  userMessage: string;   // first 80 chars — for log preview
+export interface SandboxOutput {
   text: string;
   tokens_used: number | null;
   latency_ms: number;
@@ -22,7 +19,7 @@ export const activePromptData  = ref<PromptDetail | null>(null);
 export const activeVersionId   = ref<number | null>(null);
 export const activeVersionText = ref<string>('');
 export const versions          = ref<VersionInfo[]>([]);
-export const activeIssueId     = ref<number | null>(null);
+export const activeIssueEvaluationId = ref<number | null>(null);
 export const newVersionDraftText = ref<string | null>(null);
 
 // The active version's system prompt is part of the version, not the test case.
@@ -32,8 +29,8 @@ export const newVersionDraftText = ref<string | null>(null);
 export const activeSystemPrompt = ref<string>('');
 export const savedSystemPrompt  = ref<string>('');
 
-export function openIssue(issueId: number) {
-  activeIssueId.value = issueId;
+export function openIssue(evaluationId: number) {
+  activeIssueEvaluationId.value = evaluationId;
   activeModule.value = 'issues';
 }
 
@@ -63,16 +60,12 @@ export const variableValues = ref<Record<string, string>>({});
 // Shared modal flags — set by any component, read by the component that owns the modal UI
 export const showSaveModal = ref(false);
 
-// Sandbox session log — lives only for this page session, not persisted
-export const sandboxOutput  = ref<SandboxEntry | null>(null);
-export const outputLog      = ref<SandboxEntry[]>([]);
-let logCounter = 0;
+// Current sandbox output only; it is cleared when switching prompts.
+export const sandboxOutput  = ref<SandboxOutput | null>(null);
 
-export function addSandboxEntry(entry: Omit<SandboxEntry, 'id'>): SandboxEntry {
-  const e = { ...entry, id: ++logCounter };
-  outputLog.value.unshift(e);
-  sandboxOutput.value = e;
-  return e;
+export function setSandboxOutput(output: SandboxOutput): SandboxOutput {
+  sandboxOutput.value = output;
+  return output;
 }
 
 export function useEditorState() {
@@ -82,11 +75,10 @@ export function useEditorState() {
     activeVersionId,
     activeVersionText,
     versions,
-    activeIssueId,
+    activeIssueEvaluationId,
     newVersionDraftText,
     variableValues,
     sandboxOutput,
-    outputLog,
-    addSandboxEntry,
+    setSandboxOutput,
   };
 }

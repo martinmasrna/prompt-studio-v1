@@ -113,6 +113,49 @@ function handleValidation(res: import('express').Response, error: unknown): bool
   return true;
 }
 
+function positiveParam(value: string, field: string): number {
+  const id = Number(value);
+  if (!Number.isInteger(id) || id <= 0) throw new ValidationError(`${field} is invalid`);
+  return id;
+}
+
+function parseIssueUpdate(
+  body: Record<string, unknown>,
+  existing: NonNullable<ReturnType<typeof getIssue>>
+): Partial<{
+  title: string;
+  note: string | null;
+  status: IssueStatus;
+  resolution_note: string | null;
+  resolved_version_id: number | null;
+}> {
+  const values: Partial<{
+    title: string;
+    note: string | null;
+    status: IssueStatus;
+    resolution_note: string | null;
+    resolved_version_id: number | null;
+  }> = {};
+  if ('title' in body) values.title = requiredString(body, 'title');
+  if ('note' in body) values.note = nullableString(body, 'note');
+  if ('status' in body) {
+    if (body.status !== 'open' && body.status !== 'diagnosed' && body.status !== 'closed') {
+      throw new ValidationError('status must be open, diagnosed, or closed');
+    }
+    values.status = body.status;
+  }
+  if ('resolution_note' in body) values.resolution_note = nullableString(body, 'resolution_note');
+  if ('resolved_version_id' in body) {
+    values.resolved_version_id = nullableInteger(body, 'resolved_version_id');
+    if (values.resolved_version_id !== null) {
+      if (existing.prompt_id === null || !entityBelongsToPrompt('versions', values.resolved_version_id, existing.prompt_id)) {
+        throw new ValidationError('Resolved version does not belong to issue prompt');
+      }
+    }
+  }
+  return values;
+}
+
 router.get('/prompts/:promptId/results', (req, res) => {
   const promptId = Number(req.params.promptId);
   if (!Number.isInteger(promptId) || !entityExists('prompts', promptId)) {
@@ -203,10 +246,59 @@ router.get('/prompts/:promptId/issues', (req, res) => {
   res.json(listIssues(promptId));
 });
 
-router.get('/issues/:id/prompt-doctor', (req, res) => {
-  const issue = getIssue(Number(req.params.id));
-  if (!issue) { res.status(404).json({ error: 'Issue not found' }); return; }
-  res.json({ prompt: generatePromptDoctorPrompt(issue) });
+router.get('/evaluations/:evaluationId/issue', (req, res) => {
+  try {
+    const issue = getIssue(positiveParam(req.params.evaluationId, 'evaluation_id'));
+    if (!issue) { res.status(404).json({ error: 'Issue not found' }); return; }
+    res.json(issue);
+  } catch (error) {
+    if (!handleValidation(res, error)) throw error;
+  }
+});
+
+router.post('/evaluations/:evaluationId/issue', (req, res) => {
+  try {
+    const evaluationId = positiveParam(req.params.evaluationId, 'evaluation_id');
+    if (!getEvaluation(evaluationId)) { res.status(404).json({ error: 'Evaluation not found' }); return; }
+    const body = objectBody(req.body);
+    const issue = createIssue(requiredString(body, 'title'), nullableString(body, 'note'), evaluationId);
+    if (issue === 'duplicate') { res.status(409).json({ error: 'Result is already flagged as an issue' }); return; }
+    res.status(201).json(issue);
+  } catch (error) {
+    if (!handleValidation(res, error)) throw error;
+  }
+});
+
+router.patch('/evaluations/:evaluationId/issue', (req, res) => {
+  try {
+    const evaluationId = positiveParam(req.params.evaluationId, 'evaluation_id');
+    const existing = getIssue(evaluationId);
+    if (!existing) { res.status(404).json({ error: 'Issue not found' }); return; }
+    const issue = updateIssue(evaluationId, parseIssueUpdate(objectBody(req.body), existing));
+    res.json(issue);
+  } catch (error) {
+    if (!handleValidation(res, error)) throw error;
+  }
+});
+
+router.delete('/evaluations/:evaluationId/issue', (req, res) => {
+  try {
+    const evaluationId = positiveParam(req.params.evaluationId, 'evaluation_id');
+    if (!deleteIssue(evaluationId)) { res.status(404).json({ error: 'Issue not found' }); return; }
+    res.json({ ok: true });
+  } catch (error) {
+    if (!handleValidation(res, error)) throw error;
+  }
+});
+
+router.get('/evaluations/:evaluationId/issue/prompt-doctor', (req, res) => {
+  try {
+    const issue = getIssue(positiveParam(req.params.evaluationId, 'evaluation_id'));
+    if (!issue) { res.status(404).json({ error: 'Issue not found' }); return; }
+    res.json({ prompt: generatePromptDoctorPrompt(issue) });
+  } catch (error) {
+    if (!handleValidation(res, error)) throw error;
+  }
 });
 
 router.post('/prompts/:promptId/issues', (req, res) => {
@@ -231,48 +323,6 @@ router.post('/prompts/:promptId/issues', (req, res) => {
   } catch (error) {
     if (!handleValidation(res, error)) throw error;
   }
-});
-
-router.patch('/issues/:id', (req, res) => {
-  try {
-    const body = objectBody(req.body);
-    const values: Partial<{
-      title: string;
-      note: string | null;
-      status: IssueStatus;
-      resolution_note: string | null;
-      resolved_version_id: number | null;
-    }> = {};
-    if ('title' in body) values.title = requiredString(body, 'title');
-    if ('note' in body) values.note = nullableString(body, 'note');
-    if ('status' in body) {
-      if (body.status !== 'open' && body.status !== 'diagnosed' && body.status !== 'closed') {
-        throw new ValidationError('status must be open, diagnosed, or closed');
-      }
-      values.status = body.status;
-    }
-    if ('resolution_note' in body) values.resolution_note = nullableString(body, 'resolution_note');
-    if ('resolved_version_id' in body) {
-      values.resolved_version_id = nullableInteger(body, 'resolved_version_id');
-      if (values.resolved_version_id !== null) {
-        const existing = getIssue(Number(req.params.id));
-        if (!existing) { res.status(404).json({ error: 'Issue not found' }); return; }
-        if (existing.prompt_id === null || !entityBelongsToPrompt('versions', values.resolved_version_id, existing.prompt_id)) {
-          throw new ValidationError('Resolved version does not belong to issue prompt');
-        }
-      }
-    }
-    const issue = updateIssue(Number(req.params.id), values);
-    if (!issue) { res.status(404).json({ error: 'Issue not found' }); return; }
-    res.json(issue);
-  } catch (error) {
-    if (!handleValidation(res, error)) throw error;
-  }
-});
-
-router.delete('/issues/:id', (req, res) => {
-  if (!deleteIssue(Number(req.params.id))) { res.status(404).json({ error: 'Issue not found' }); return; }
-  res.json({ ok: true });
 });
 
 export default router;

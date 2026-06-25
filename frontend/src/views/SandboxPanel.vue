@@ -7,7 +7,7 @@
 import { ref, computed } from 'vue';
 import { renderContent } from '../utils/renderContent';
 import { api } from '../api';
-import { activeVersionId, activeVersionText, activeSystemPrompt, variableValues, sandboxOutput, addSandboxEntry } from '../store/editor';
+import { activeVersionId, activeVersionText, activeSystemPrompt, variableValues, sandboxOutput, setSandboxOutput } from '../store/editor';
 import { activeModelId } from '../store/settings';
 import { temperature, topP, topK, maxTokens, enableThinking } from '../store/configs';
 import TestCaseControls from '../components/TestCaseControls.vue';
@@ -61,9 +61,7 @@ async function runLLM() {
       enable_thinking: enableThinking.value,
     } as Parameters<typeof api.llm.run>[0]);
 
-    addSandboxEntry({
-      timestamp:   Date.now(),
-      userMessage: userMessage.value.slice(0, 80),
+    setSandboxOutput({
       text:        result.text,
       tokens_used: result.tokens_used,
       latency_ms:  result.latency_ms,

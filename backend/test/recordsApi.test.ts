@@ -85,13 +85,13 @@ test('results, comparisons, and issues API', async t => {
     assert.equal(noted.response.status, 200);
     assert.equal(noted.body.note, 'Good baseline');
 
-    const linked = await requestJson<{ id: number; evaluation_id: number }>(
+    const linked = await requestJson<{ evaluation_id: number }>(
       server.baseUrl,
       `/api/prompts/${prompt.body.id}/issues`,
       jsonRequest('POST', { title: 'Flag baseline', evaluation_id: evaluationId })
     );
-    assert.equal(linked.body.id, evaluationId);
     assert.equal(linked.body.evaluation_id, evaluationId);
+    assert.equal('id' in linked.body, false);
 
     assert.equal(
       (await fetch(`${server.baseUrl}/api/prompts/${prompt.body.id}/issues`, jsonRequest('POST', {
@@ -116,22 +116,22 @@ test('results, comparisons, and issues API', async t => {
     assert.equal(cleared.body.note, null);
     assert.equal((await fetch(`${server.baseUrl}/api/evaluations/999999`, jsonRequest('PATCH', { note: 'x' }))).status, 404);
 
-    assert.equal((await fetch(`${server.baseUrl}/api/issues/${linked.body.id}`, { method: 'DELETE' })).status, 200);
+    assert.equal((await fetch(`${server.baseUrl}/api/evaluations/${linked.body.evaluation_id}/issue`, { method: 'DELETE' })).status, 200);
   });
 
-  let issueId = 0;
+  let issueEvaluationId = 0;
   await t.test('creates flagged-result issues with diagnosed/closed lifecycle', async () => {
-    const linked = await requestJson<{ id: number; status: string; evaluation_id: number; evaluation: { id: number } }>(
+    const linked = await requestJson<{ status: string; evaluation_id: number; evaluation: { id: number } }>(
       server.baseUrl,
-      `/api/prompts/${prompt.body.id}/issues`,
-      jsonRequest('POST', { title: 'Wrong answer', note: 'Expected 33%', evaluation_id: evaluationId })
+      `/api/evaluations/${evaluationId}/issue`,
+      jsonRequest('POST', { title: 'Wrong answer', note: 'Expected 33%' })
     );
     assert.equal(linked.response.status, 201);
     assert.equal(linked.body.status, 'open');
-    assert.equal(linked.body.id, evaluationId);
     assert.equal(linked.body.evaluation_id, evaluationId);
+    assert.equal('id' in linked.body, false);
     assert.equal(linked.body.evaluation.id, evaluationId);
-    issueId = linked.body.id;
+    issueEvaluationId = linked.body.evaluation_id;
 
     assert.equal(
       (await fetch(`${server.baseUrl}/api/prompts/${prompt.body.id}/issues`, jsonRequest('POST', { title: 'Manual issue' }))).status,
@@ -146,7 +146,7 @@ test('results, comparisons, and issues API', async t => {
       resolved_version: { id: number; name: string };
     }>(
       server.baseUrl,
-      `/api/issues/${issueId}`,
+      `/api/evaluations/${issueEvaluationId}/issue`,
       jsonRequest('PATCH', {
         status: 'diagnosed',
         title: 'Confirmed wrong answer',
@@ -162,7 +162,7 @@ test('results, comparisons, and issues API', async t => {
 
     const closed = await requestJson<{ status: string; resolution_note: string }>(
       server.baseUrl,
-      `/api/issues/${issueId}`,
+      `/api/evaluations/${issueEvaluationId}/issue`,
       jsonRequest('PATCH', {
         status: 'closed',
         resolution_note: 'Prompt Doctor found missing context. Fix verified.',
@@ -174,7 +174,7 @@ test('results, comparisons, and issues API', async t => {
 
   await t.test('generates Prompt Doctor evidence only for linked issues', async () => {
     const generated = await requestJson<{ prompt: string }>(
-      server.baseUrl, `/api/issues/${issueId}/prompt-doctor`
+      server.baseUrl, `/api/evaluations/${issueEvaluationId}/issue/prompt-doctor`
     );
     assert.equal(generated.response.status, 200);
     assert.match(generated.body.prompt, /Confirmed wrong answer/);
@@ -183,13 +183,13 @@ test('results, comparisons, and issues API', async t => {
     assert.doesNotMatch(generated.body.prompt, /\{\{\s*evaluation\./);
 
     assert.equal(
-      (await fetch(`${server.baseUrl}/api/issues/999999/prompt-doctor`)).status,
+      (await fetch(`${server.baseUrl}/api/evaluations/999999/issue/prompt-doctor`)).status,
       404
     );
   });
 
   await t.test('unflags issues without deleting result evidence', async () => {
-    assert.equal((await fetch(`${server.baseUrl}/api/issues/${issueId}`, { method: 'DELETE' })).status, 200);
+    assert.equal((await fetch(`${server.baseUrl}/api/evaluations/${issueEvaluationId}/issue`, { method: 'DELETE' })).status, 200);
     const afterUnflag = await requestJson<{ evaluations: Array<{ id: number; issue: null }> }>(
       server.baseUrl, `/api/prompts/${prompt.body.id}/results`
     );
@@ -198,14 +198,14 @@ test('results, comparisons, and issues API', async t => {
   });
 
   await t.test('atomically flags an unsaved result', async () => {
-    const issue = await requestJson<{ id: number; evaluation_id: number; evaluation: { id: number; response_text: string; issue: { evaluation_id: number } } }>(
+    const issue = await requestJson<{ evaluation_id: number; evaluation: { id: number; response_text: string; issue: { evaluation_id: number } } }>(
       server.baseUrl,
       `/api/prompts/${prompt.body.id}/issues`,
       jsonRequest('POST', { title: 'One click', evaluation: { ...baseEvaluation, response_text: 'bad output' } })
     );
     assert.equal(issue.response.status, 201);
     assert.ok(issue.body.evaluation_id);
-    assert.equal(issue.body.id, issue.body.evaluation_id);
+    assert.equal('id' in issue.body, false);
     assert.equal(issue.body.evaluation.response_text, 'bad output');
     assert.equal(issue.body.evaluation.issue.evaluation_id, issue.body.evaluation_id);
   });
@@ -242,12 +242,13 @@ test('results, comparisons, and issues API', async t => {
     );
     assert.equal(results.body.comparisons.find(item => item.id === comparison.body.id)?.note, 'Candidate beats baseline');
     assert.equal(results.body.comparisons.find(item => item.id === comparison.body.id)?.evaluations[0]?.issue, null);
-    const flaggedSide = await requestJson<{ id: number }>(
+    const flaggedSide = await requestJson<{ evaluation_id: number }>(
       server.baseUrl,
-      `/api/prompts/${prompt.body.id}/issues`,
-      jsonRequest('POST', { title: 'Bad A/B side', evaluation_id: sideA.body.id })
+      `/api/evaluations/${sideA.body.id}/issue`,
+      jsonRequest('POST', { title: 'Bad A/B side' })
     );
-    assert.equal(flaggedSide.body.id, sideA.body.id);
+    assert.equal(flaggedSide.body.evaluation_id, sideA.body.id);
+    assert.equal('id' in flaggedSide.body, false);
     const withFlag = await requestJson<{ comparisons: Array<{ id: number; evaluations: Array<{ id: number; issue: { title: string } | null }> }> }>(
       server.baseUrl,
       `/api/prompts/${prompt.body.id}/results`
@@ -255,6 +256,6 @@ test('results, comparisons, and issues API', async t => {
     assert.equal(withFlag.body.comparisons.find(item => item.id === comparison.body.id)?.evaluations[0]?.issue?.title, 'Bad A/B side');
     assert.equal((await fetch(`${server.baseUrl}/api/evaluations/${sideA.body.id}`, { method: 'DELETE' })).status, 409);
     assert.equal((await fetch(`${server.baseUrl}/api/comparisons/${comparison.body.id}`, { method: 'DELETE' })).status, 200);
-    assert.equal((await fetch(`${server.baseUrl}/api/issues/${sideA.body.id}/prompt-doctor`)).status, 404);
+    assert.equal((await fetch(`${server.baseUrl}/api/evaluations/${sideA.body.id}/issue/prompt-doctor`)).status, 404);
   });
 });

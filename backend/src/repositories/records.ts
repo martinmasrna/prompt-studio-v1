@@ -65,7 +65,6 @@ export interface EvaluationIssue {
 }
 
 export interface Issue extends EvaluationIssue {
-  id: number;
   prompt_id: number | null;
   evaluation: Evaluation;
 }
@@ -225,7 +224,6 @@ function mapIssue(row: IssueRow): Issue {
   if (!evaluation) throw new Error(`Issue ${row.evaluation_id} has no evaluation`);
   return {
     ...mapEvaluationIssue(row),
-    id: row.evaluation_id,
     prompt_id: evaluation.prompt_id,
     evaluation,
   };
@@ -276,7 +274,7 @@ export function createIssue(
 }
 
 export function updateIssue(
-  id: number,
+  evaluationId: number,
   values: Partial<{
     title: string;
     note: string | null;
@@ -285,7 +283,7 @@ export function updateIssue(
     resolved_version_id: number | null;
   }>
 ): Issue | null {
-  if (!getIssue(id)) return null;
+  if (!getIssue(evaluationId)) return null;
   const fields: string[] = [];
   const params: Array<string | number | null> = [];
   if (values.title !== undefined) { fields.push('title = ?'); params.push(values.title); }
@@ -295,12 +293,12 @@ export function updateIssue(
   if (values.resolved_version_id !== undefined) { fields.push('resolved_version_id = ?'); params.push(values.resolved_version_id); }
   if (fields.length) {
     fields.push('updated_at = unixepoch()');
-    params.push(id);
+    params.push(evaluationId);
     db.run(`UPDATE issues SET ${fields.join(', ')} WHERE evaluation_id = ?`, params);
   }
-  return getIssue(id);
+  return getIssue(evaluationId);
 }
 
-export function deleteIssue(id: number): boolean {
-  return db.run('DELETE FROM issues WHERE evaluation_id = ?', [id]).changes > 0;
+export function deleteIssue(evaluationId: number): boolean {
+  return db.run('DELETE FROM issues WHERE evaluation_id = ?', [evaluationId]).changes > 0;
 }

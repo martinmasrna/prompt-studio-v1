@@ -134,9 +134,7 @@ export interface EvaluationIssue {
 }
 
 export interface Issue extends EvaluationIssue {
-  id: number;
   prompt_id: number | null;
-  evaluation_id: number;
   evaluation: Evaluation;
 }
 
@@ -230,18 +228,24 @@ export const api = {
   },
   issues: {
     list: (promptId: number) => apiFetch<Issue[]>(`/api/prompts/${promptId}/issues`),
-    promptDoctor: (id: number) => apiFetch<{ prompt: string }>(`/api/issues/${id}/prompt-doctor`),
-    create: (promptId: number, data: { title: string; note?: string | null; evaluation_id?: number; evaluation?: EvaluationInput }) =>
+    getForEvaluation: (evaluationId: number) =>
+      apiFetch<Issue>(`/api/evaluations/${evaluationId}/issue`),
+    promptDoctor: (evaluationId: number) =>
+      apiFetch<{ prompt: string }>(`/api/evaluations/${evaluationId}/issue/prompt-doctor`),
+    createForEvaluation: (evaluationId: number, data: { title: string; note?: string | null }) =>
+      apiFetch<Issue>(`/api/evaluations/${evaluationId}/issue`, { method: 'POST', ...json(data) }),
+    createFromPrompt: (promptId: number, data: { title: string; note?: string | null; evaluation_id?: number; evaluation?: EvaluationInput }) =>
       apiFetch<Issue>(`/api/prompts/${promptId}/issues`, { method: 'POST', ...json(data) }),
-    update: (id: number, data: Partial<{
+    update: (evaluationId: number, data: Partial<{
       title: string;
       note: string | null;
       status: 'open' | 'diagnosed' | 'closed';
       resolution_note: string | null;
       resolved_version_id: number | null;
     }>) =>
-      apiFetch<Issue>(`/api/issues/${id}`, { method: 'PATCH', ...json(data) }),
-    delete: (id: number) => apiFetch<{ ok: boolean }>(`/api/issues/${id}`, { method: 'DELETE' }),
+      apiFetch<Issue>(`/api/evaluations/${evaluationId}/issue`, { method: 'PATCH', ...json(data) }),
+    delete: (evaluationId: number) =>
+      apiFetch<{ ok: boolean }>(`/api/evaluations/${evaluationId}/issue`, { method: 'DELETE' }),
   },
   llm: {
     models: () => apiFetch<{ models: ModelOption[]; active: string | null }>('/api/llm/models'),

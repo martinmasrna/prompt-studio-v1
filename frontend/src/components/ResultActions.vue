@@ -56,13 +56,10 @@ async function createIssue() {
   saving.value = true;
   error.value = null;
   try {
-    const issue = await api.issues.create(props.evaluation.prompt_id, {
-      title: title.value.trim(),
-      note: note.value.trim() || null,
-      ...(props.savedId
-        ? { evaluation_id: props.savedId }
-        : { evaluation: props.evaluation }),
-    });
+    const data = { title: title.value.trim(), note: note.value.trim() || null };
+    const issue = props.savedId
+      ? await api.issues.createForEvaluation(props.savedId, data)
+      : await api.issues.createFromPrompt(props.evaluation.prompt_id, { ...data, evaluation: props.evaluation });
     if (issue.evaluation_id) emit('saved', issue.evaluation_id);
     showIssue.value = false;
     emit('issueCreated', issue);

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue';
 import { api, type Issue } from '../api';
-import { activeIssueId, activePromptData, versions as promptVersions } from '../store/editor';
+import { activeIssueEvaluationId, activePromptData, versions as promptVersions } from '../store/editor';
 import ResultCard from '../components/ResultCard.vue';
 
 const issues = ref<Issue[]>([]);
@@ -30,12 +30,12 @@ const visibleIssues = computed(() => issues.value.filter(issue => issue.status =
 const statusCount = (status: Issue['status']) => issues.value.filter(issue => issue.status === status).length;
 
 function replaceIssue(updated: Issue) {
-  const index = issues.value.findIndex(item => item.id === updated.id);
+  const index = issues.value.findIndex(item => item.evaluation_id === updated.evaluation_id);
   if (index >= 0) issues.value[index] = updated;
 }
 
 function removeLocalIssue(issue: Issue) {
-  issues.value = issues.value.filter(item => item.id !== issue.id);
+  issues.value = issues.value.filter(item => item.evaluation_id !== issue.evaluation_id);
 }
 
 function toggleMenu(id: number) { openMenuId.value = openMenuId.value === id ? null : id; }
@@ -62,7 +62,7 @@ async function toggle(issue: Issue) {
     return;
   }
   try {
-    const updated = await api.issues.update(issue.id, { status: 'diagnosed' });
+    const updated = await api.issues.update(issue.evaluation_id, { status: 'diagnosed' });
     replaceIssue(updated);
   } catch (cause) { alert(cause instanceof Error ? cause.message : 'Could not update issue'); }
 }
@@ -72,7 +72,7 @@ async function saveResolution() {
   savingResolution.value = true;
   resolutionError.value = null;
   try {
-    const updated = await api.issues.update(resolutionIssue.value.id, {
+    const updated = await api.issues.update(resolutionIssue.value.evaluation_id, {
       status: resolutionTargetStatus.value,
       resolution_note: resolutionNote.value.trim() || null,
       resolved_version_id: resolvedVersionId.value ? Number(resolvedVersionId.value) : null,
@@ -89,7 +89,7 @@ async function saveResolution() {
 
 function beginEdit(issue: Issue) {
   openMenuId.value = null;
-  editingId.value = issue.id;
+  editingId.value = issue.evaluation_id;
   editTitle.value = issue.title;
   editNote.value = issue.note ?? '';
 }
@@ -97,7 +97,7 @@ function beginEdit(issue: Issue) {
 async function saveEdit(issue: Issue) {
   if (!editTitle.value.trim()) return;
   try {
-    const updated = await api.issues.update(issue.id, {
+    const updated = await api.issues.update(issue.evaluation_id, {
       title: editTitle.value.trim(), note: editNote.value.trim() || null,
     });
     replaceIssue(updated);
@@ -109,7 +109,7 @@ async function remove(issue: Issue) {
   openMenuId.value = null;
   try {
     if (confirm('Remove the issue flag and keep this saved result?')) {
-      await api.issues.delete(issue.id);
+      await api.issues.delete(issue.evaluation_id);
       removeLocalIssue(issue);
       return;
     }
@@ -122,7 +122,7 @@ async function remove(issue: Issue) {
     }
 
     if (!confirm('Delete this saved result and its issue metadata?')) return;
-    await api.records.deleteEvaluation(issue.id);
+    await api.records.deleteEvaluation(issue.evaluation_id);
     removeLocalIssue(issue);
   } catch (cause) { alert(cause instanceof Error ? cause.message : 'Could not delete issue'); }
 }
@@ -135,7 +135,7 @@ async function openPromptDoctor(issue: Issue) {
   doctorError.value = null;
   doctorCopied.value = false;
   try {
-    const result = await api.issues.promptDoctor(issue.id);
+    const result = await api.issues.promptDoctor(issue.evaluation_id);
     doctorPrompt.value = result.prompt;
   } catch (cause) {
     doctorError.value = cause instanceof Error ? cause.message : 'Could not prepare Prompt Doctor';
@@ -164,13 +164,13 @@ async function copyPromptDoctor() {
 }
 
 watch(() => activePromptData.value?.id, load, { immediate: true });
-watch([issues, activeIssueId], async () => {
-  if (activeIssueId.value === null) return;
-  const issue = issues.value.find(item => item.id === activeIssueId.value);
+watch([issues, activeIssueEvaluationId], async () => {
+  if (activeIssueEvaluationId.value === null) return;
+  const issue = issues.value.find(item => item.evaluation_id === activeIssueEvaluationId.value);
   if (!issue) return;
   filter.value = issue.status;
   await nextTick();
-  document.getElementById(`issue-${issue.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  document.getElementById(`issue-${issue.evaluation_id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }, { immediate: true });
 </script>
 
@@ -192,8 +192,8 @@ watch([issues, activeIssueId], async () => {
     <div class="issue-list">
       <ResultCard
         v-for="issue in visibleIssues"
-        :id="`issue-${issue.id}`"
-        :key="issue.id"
+        :id="`issue-${issue.evaluation_id}`"
+        :key="issue.evaluation_id"
         :evaluation="issue.evaluation"
         :title="issue.title"
         :date-at="issue.created_at"
@@ -217,8 +217,8 @@ watch([issues, activeIssueId], async () => {
               <span>Prompt Doctor</span>
             </button>
             <div class="menu-wrap">
-              <button class="kebab" aria-label="Issue actions" @click.stop="toggleMenu(issue.id)">&#8942;</button>
-              <template v-if="openMenuId === issue.id">
+              <button class="kebab" aria-label="Issue actions" @click.stop="toggleMenu(issue.evaluation_id)">&#8942;</button>
+              <template v-if="openMenuId === issue.evaluation_id">
                 <div class="menu-backdrop" @click.stop="openMenuId = null" />
                 <div class="menu" role="menu" @click.stop>
                   <button role="menuitem" @click="beginEdit(issue)">Edit issue</button>
@@ -233,7 +233,7 @@ watch([issues, activeIssueId], async () => {
         </template>
 
         <template #note>
-          <div v-if="editingId === issue.id" class="issue-edit">
+          <div v-if="editingId === issue.evaluation_id" class="issue-edit">
             <input v-model="editTitle" class="title-input" />
             <textarea v-model="editNote" rows="4" placeholder="Issue note" />
             <div class="actions">
