@@ -32,6 +32,7 @@ test('fresh migrations are complete and idempotent', () => withDatabase(db => {
     { version: 7, name: 'drop_prompt_description' },
     { version: 8, name: 'decompose_test_config' },
     { version: 9, name: 'add_comparison_note' },
+    { version: 10, name: 'make_issues_flagged_results' },
   ]);
   const promptColumns = db.all('PRAGMA table_info(prompts)') as unknown as Array<{ name: string }>;
   assert.ok(!promptColumns.some(column => column.name === 'description'));
@@ -39,6 +40,9 @@ test('fresh migrations are complete and idempotent', () => withDatabase(db => {
   assert.ok(db.get("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'evaluations'"));
   assert.ok(db.get("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'configs'"));
   const issueColumns = db.all('PRAGMA table_info(issues)') as unknown as Array<{ name: string }>;
+  assert.ok(!issueColumns.some(column => column.name === 'id'));
+  assert.ok(!issueColumns.some(column => column.name === 'prompt_id'));
+  assert.ok(issueColumns.some(column => column.name === 'evaluation_id'));
   assert.ok(issueColumns.some(column => column.name === 'resolution_note'));
   assert.ok(issueColumns.some(column => column.name === 'resolved_version_id'));
   const evaluationColumns = db.all('PRAGMA table_info(evaluations)') as unknown as Array<{ name: string }>;
@@ -191,7 +195,7 @@ test('v8 decomposes bundled test config, preserving data', () => withDatabase(db
   assert.equal((db.get("SELECT variables_json FROM test_cases WHERE id = 3") as { variables_json: string }).variables_json, '{"q":"x"}');
 }));
 
-test('existing issues gain resolution fields without losing data', () => withDatabase(db => {
+test('legacy issues become flagged results and manual issues are dropped', () => withDatabase(db => {
   db.exec(`
     PRAGMA foreign_keys = ON;
     CREATE TABLE schema_migrations (
@@ -200,49 +204,90 @@ test('existing issues gain resolution fields without losing data', () => withDat
       applied_at INTEGER NOT NULL DEFAULT (unixepoch())
     );
     INSERT INTO schema_migrations (version, name) VALUES
-      (1, 'baseline_prompt_schema'),
-      (2, 'add_test_cases'),
-      (3, 'add_results_and_issues');
-    CREATE TABLE prompts (id INTEGER PRIMARY KEY, name TEXT NOT NULL, description TEXT);
+      (1, 'baseline_prompt_schema'), (2, 'add_test_cases'),
+      (3, 'add_results_and_issues'), (4, 'add_issue_resolutions'),
+      (5, 'add_diagnosed_issue_status'), (6, 'add_evaluation_note'),
+      (7, 'drop_prompt_description'), (8, 'decompose_test_config'),
+      (9, 'add_comparison_note');
+    CREATE TABLE prompts (id INTEGER PRIMARY KEY, name TEXT NOT NULL);
     CREATE TABLE versions (
       id INTEGER PRIMARY KEY,
       prompt_id INTEGER NOT NULL REFERENCES prompts(id) ON DELETE CASCADE,
       name TEXT NOT NULL,
       text TEXT NOT NULL,
       note TEXT,
-      is_current INTEGER NOT NULL DEFAULT 0
+      is_current INTEGER NOT NULL DEFAULT 0,
+      system_prompt TEXT NOT NULL DEFAULT '',
+      default_config_id INTEGER
     );
-    CREATE TABLE evaluations (id INTEGER PRIMARY KEY);
+    CREATE TABLE evaluations (
+      id INTEGER PRIMARY KEY,
+      prompt_id INTEGER REFERENCES prompts(id) ON DELETE SET NULL
+    );
     CREATE TABLE issues (
       id INTEGER PRIMARY KEY,
       prompt_id INTEGER REFERENCES prompts(id) ON DELETE SET NULL,
       evaluation_id INTEGER,
       title TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'open',
+      status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'diagnosed', 'closed')),
       note TEXT,
+      resolution_note TEXT,
+      resolved_version_id INTEGER REFERENCES versions(id) ON DELETE SET NULL,
       created_at INTEGER NOT NULL DEFAULT (unixepoch()),
       updated_at INTEGER NOT NULL DEFAULT (unixepoch())
     );
     INSERT INTO prompts (id, name) VALUES (1, 'kept');
     INSERT INTO versions (id, prompt_id, name, text) VALUES (2, 1, 'fixed', 'updated prompt');
-    INSERT INTO issues (id, prompt_id, title, note) VALUES (3, 1, 'Existing issue', 'Original note');
+    INSERT INTO evaluations (id, prompt_id) VALUES (100, 1), (101, 1);
+    INSERT INTO issues (
+      id, prompt_id, evaluation_id, title, status, note,
+      resolution_note, resolved_version_id, created_at, updated_at
+    ) VALUES
+      (1, 1, 100, 'Closed duplicate', 'closed', 'old closed', NULL, NULL, 10, 300),
+      (2, 1, 100, 'Open winner', 'open', 'keep me', NULL, NULL, 20, 100),
+      (3, 1, 100, 'Diagnosed duplicate', 'diagnosed', 'newer but lower priority', 'Diagnosis', 2, 30, 400),
+      (4, 1, 101, 'Older closed', 'closed', NULL, NULL, NULL, 40, 50),
+      (5, 1, 101, 'Newer closed', 'closed', NULL, 'Fixed', 2, 41, 70),
+      (6, 1, NULL, 'Manual issue', 'open', 'drop me', NULL, NULL, 50, 500),
+      (7, 1, 999, 'Dangling issue', 'open', 'drop me too', NULL, NULL, 60, 600);
   `);
 
   runMigrations(db);
-  db.run(
-    "UPDATE issues SET status = 'diagnosed', resolution_note = ?, resolved_version_id = ? WHERE id = 3",
-    ['Diagnosis', 2]
+
+  const issueColumns = db.all('PRAGMA table_info(issues)') as unknown as Array<{ name: string }>;
+  assert.ok(!issueColumns.some(column => column.name === 'id'));
+  assert.ok(!issueColumns.some(column => column.name === 'prompt_id'));
+  assert.deepEqual(
+    db.all('SELECT evaluation_id, title, status, note, resolution_note, resolved_version_id FROM issues ORDER BY evaluation_id'),
+    [
+      {
+        evaluation_id: 100,
+        title: 'Open winner',
+        status: 'open',
+        note: 'keep me',
+        resolution_note: null,
+        resolved_version_id: null,
+      },
+      {
+        evaluation_id: 101,
+        title: 'Newer closed',
+        status: 'closed',
+        note: null,
+        resolution_note: 'Fixed',
+        resolved_version_id: 2,
+      },
+    ]
   );
   assert.deepEqual(
-    db.get('SELECT title, note, resolution_note, resolved_version_id FROM issues WHERE id = 3'),
+    db.get('SELECT title, note, resolution_note, resolved_version_id FROM issues WHERE evaluation_id = 101'),
     {
-      title: 'Existing issue',
-      note: 'Original note',
-      resolution_note: 'Diagnosis',
+      title: 'Newer closed',
+      note: null,
+      resolution_note: 'Fixed',
       resolved_version_id: 2,
     }
   );
-  assert.throws(() => db.run("UPDATE issues SET status = 'invalid' WHERE id = 3"));
+  assert.throws(() => db.run("UPDATE issues SET status = 'invalid' WHERE evaluation_id = 100"));
 }));
 
 test('a failed migration rolls back both schema and migration record', () => withDatabase(db => {

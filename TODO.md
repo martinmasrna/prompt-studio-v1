@@ -55,7 +55,7 @@ Committed decisions:
 - A **test case** belongs to one prompt and defines reusable inputs plus default run settings.
 - A test case does not bind a prompt version or model.
 - An **evaluation** is one immutable execution of a test against an explicit version and model.
-- An **issue** is a minimal open/closed work item with a title, note, and optional linked evaluation.
+- An **issue** is issue metadata attached to one evaluation; the evaluation is the issue identity.
 - An **evaluation batch** groups the two sides of a saved A/B comparison.
 - Evaluations retain full execution snapshots. Source IDs provide lineage, not historical truth.
 - Deleting source prompts/tests preserves evaluation history by default. A separate explicit destructive action may remove both.
@@ -101,12 +101,12 @@ evaluations (
 )
 
 issues (
-  id INTEGER PRIMARY KEY,
-  prompt_id INTEGER REFERENCES prompts(id) ON DELETE SET NULL,
-  evaluation_id INTEGER REFERENCES evaluations(id) ON DELETE SET NULL,
+  evaluation_id INTEGER PRIMARY KEY REFERENCES evaluations(id) ON DELETE CASCADE,
   title TEXT NOT NULL,
-  status TEXT NOT NULL,            -- open | closed
+  status TEXT NOT NULL,            -- open | diagnosed | closed
   note TEXT,
+  resolution_note TEXT,
+  resolved_version_id INTEGER REFERENCES versions(id) ON DELETE SET NULL,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 )
@@ -119,8 +119,8 @@ issues (
 - [x] Capture execution context when the run starts, before settings can change.
 - [x] Persist A/B runs as two evaluations in one comparison batch without duplicating saved sides.
 - [x] Add prompt-level Results and Issues tabs.
-- [x] Add one-click “Flag as issue,” manual issues, and open/closed lifecycle.
-- [x] Protect evaluation evidence from deletion while linked to an issue.
+- [x] Add one-click "Flag as issue" and open/diagnosed/closed lifecycle.
+- [x] Model issues as flagged results and cascade issue metadata with deleted evidence.
 - [ ] Run selected test cases as a batch against one or more version/model targets.
 - [ ] Add deterministic assertions and automatic checks.
 - [ ] Add configurable LLM-as-judge assessments.
@@ -129,7 +129,7 @@ issues (
 
 ## Open questions
 
-- Should issues eventually support multiple linked evaluations as accumulated evidence?
+- Should issues eventually support multiple evaluations as accumulated evidence?
 - How should automated evaluation criteria and assessments be structured?
 - Should test cases later be groupable into reusable named suites, or are batches selected ad hoc?
 - Which score scales and aggregation rules should be first-class?

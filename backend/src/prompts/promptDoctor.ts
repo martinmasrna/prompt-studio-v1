@@ -56,7 +56,6 @@ export function renderPromptTemplate(template: string, context: object): string 
 }
 
 export function buildPromptDoctorContext(issue: Issue): PromptDoctorContext {
-  if (!issue.evaluation) throw new Error('Prompt Doctor requires a linked evaluation');
   const evaluation = issue.evaluation;
   return {
     issue: {

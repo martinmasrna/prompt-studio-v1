@@ -160,9 +160,10 @@ stores both A/B sides as one grouped record.
 
 ### The workspace — "Issues" tab
 Use **Flag as issue** beside any output to save its evidence and create an open
-issue in one step. Issues contain a title, an optional note, and an open/closed
-status. You can also create a manual issue for observations that do not have a
-linked result.
+issue in one step. Issues are flagged saved results, so every issue keeps the
+same prompt, response, settings, and model evidence as the Results tab. Issues
+contain a title, an optional issue note, diagnosis/resolution notes, and an
+open/diagnosed/closed status.
 
 ---
 

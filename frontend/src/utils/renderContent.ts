@@ -36,5 +36,9 @@ renderer.use({ extensions: [
 
 /** Render model-authored Markdown and TeX without allowing unsafe HTML. */
 export function renderContent(source: string): string {
-  return DOMPurify.sanitize(renderer.parse(source) as string);
+  const html = renderer.parse(source) as string;
+  if (typeof DOMPurify.sanitize === 'function') return DOMPurify.sanitize(html);
+  return html
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+    .replace(/\son\w+=(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '');
 }

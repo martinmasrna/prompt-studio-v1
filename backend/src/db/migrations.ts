@@ -173,6 +173,8 @@ const migrations: Migration[] = [
     version: 5,
     name: 'add_diagnosed_issue_status',
     up(db) {
+      if (!columnNames(db, 'issues').includes('id')) return;
+
       db.exec(`
         ALTER TABLE issues RENAME TO issues_before_diagnosed_status;
 
@@ -339,6 +341,63 @@ const migrations: Migration[] = [
       if (tableNames(db).includes('evaluation_batches') && !columnNames(db, 'evaluation_batches').includes('note')) {
         db.exec('ALTER TABLE evaluation_batches ADD COLUMN note TEXT');
       }
+    },
+  },
+  {
+    version: 10,
+    name: 'make_issues_flagged_results',
+    up(db) {
+      if (!tableNames(db).includes('issues') || !columnNames(db, 'issues').includes('id')) return;
+
+      db.exec(`
+        ALTER TABLE issues RENAME TO issues_before_flagged_results;
+
+        CREATE TABLE issues (
+          evaluation_id       INTEGER PRIMARY KEY REFERENCES evaluations(id) ON DELETE CASCADE,
+          title               TEXT NOT NULL,
+          status              TEXT NOT NULL DEFAULT 'open'
+                              CHECK (status IN ('open', 'diagnosed', 'closed')),
+          note                TEXT,
+          resolution_note     TEXT,
+          resolved_version_id INTEGER REFERENCES versions(id) ON DELETE SET NULL,
+          created_at          INTEGER NOT NULL DEFAULT (unixepoch()),
+          updated_at          INTEGER NOT NULL DEFAULT (unixepoch())
+        );
+
+        INSERT INTO issues (
+          evaluation_id, title, status, note,
+          resolution_note, resolved_version_id, created_at, updated_at
+        )
+        SELECT
+          evaluation_id, title, status, note,
+          resolution_note, resolved_version_id, created_at, updated_at
+        FROM (
+          SELECT
+            legacy.*,
+            ROW_NUMBER() OVER (
+              PARTITION BY legacy.evaluation_id
+              ORDER BY
+                CASE legacy.status
+                  WHEN 'open' THEN 0
+                  WHEN 'diagnosed' THEN 1
+                  ELSE 2
+                END,
+                legacy.updated_at DESC,
+                legacy.id DESC
+            ) AS issue_rank
+          FROM issues_before_flagged_results legacy
+          WHERE legacy.evaluation_id IS NOT NULL
+            AND EXISTS (
+              SELECT 1 FROM evaluations e WHERE e.id = legacy.evaluation_id
+            )
+        )
+        WHERE issue_rank = 1;
+
+        DROP TABLE issues_before_flagged_results;
+
+        CREATE INDEX idx_issues_status_created ON issues(status, created_at DESC);
+        CREATE INDEX idx_issues_resolved_version ON issues(resolved_version_id);
+      `);
     },
   },
 ];

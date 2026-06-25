@@ -109,8 +109,7 @@ export interface Evaluation extends EvaluationInput {
   batch_id: number | null;
   note: string | null;
   created_at: number;
-  // Present only on results listings: the issue this result was auto-saved for, if any.
-  issue_id?: number | null;
+  issue: EvaluationIssue | null;
 }
 
 export interface Comparison {
@@ -122,10 +121,8 @@ export interface Comparison {
   evaluations: Evaluation[];
 }
 
-export interface Issue {
-  id: number;
-  prompt_id: number | null;
-  evaluation_id: number | null;
+export interface EvaluationIssue {
+  evaluation_id: number;
   title: string;
   status: 'open' | 'diagnosed' | 'closed';
   note: string | null;
@@ -134,7 +131,13 @@ export interface Issue {
   resolved_version: { id: number; name: string } | null;
   created_at: number;
   updated_at: number;
-  evaluation: Evaluation | null;
+}
+
+export interface Issue extends EvaluationIssue {
+  id: number;
+  prompt_id: number | null;
+  evaluation_id: number;
+  evaluation: Evaluation;
 }
 
 // --- Fetch helper ---

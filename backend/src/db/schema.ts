@@ -95,22 +95,20 @@ export const RESULTS_SCHEMA_SQL = `
   );
 
   CREATE TABLE issues (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    prompt_id     INTEGER REFERENCES prompts(id) ON DELETE SET NULL,
-    evaluation_id INTEGER REFERENCES evaluations(id) ON DELETE SET NULL,
-    title         TEXT NOT NULL,
-    status        TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'diagnosed', 'closed')),
-    note          TEXT,
-    resolution_note    TEXT,
+    evaluation_id       INTEGER PRIMARY KEY REFERENCES evaluations(id) ON DELETE CASCADE,
+    title               TEXT NOT NULL,
+    status              TEXT NOT NULL DEFAULT 'open'
+                        CHECK (status IN ('open', 'diagnosed', 'closed')),
+    note                TEXT,
+    resolution_note     TEXT,
     resolved_version_id INTEGER REFERENCES versions(id) ON DELETE SET NULL,
-    created_at    INTEGER NOT NULL DEFAULT (unixepoch()),
-    updated_at    INTEGER NOT NULL DEFAULT (unixepoch())
+    created_at          INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at          INTEGER NOT NULL DEFAULT (unixepoch())
   );
 
   CREATE INDEX idx_evaluation_batches_prompt ON evaluation_batches(prompt_id, created_at DESC);
   CREATE INDEX idx_evaluations_prompt ON evaluations(prompt_id, executed_at DESC);
   CREATE INDEX idx_evaluations_batch ON evaluations(batch_id);
-  CREATE INDEX idx_issues_prompt ON issues(prompt_id, status, created_at DESC);
-  CREATE INDEX idx_issues_evaluation ON issues(evaluation_id);
+  CREATE INDEX idx_issues_status_created ON issues(status, created_at DESC);
   CREATE INDEX idx_issues_resolved_version ON issues(resolved_version_id);
 `;

@@ -35,11 +35,10 @@ export interface Evaluation extends EvaluationInput {
   batch_id: number | null;
   note: string | null;
   created_at: number;
-  // Present only on results listings: the issue this result was auto-saved for, if any.
-  issue_id?: number | null;
+  issue: EvaluationIssue | null;
 }
 
-interface EvaluationRow extends Omit<Evaluation, 'variables' | 'enable_thinking'> {
+interface EvaluationRow extends Omit<Evaluation, 'variables' | 'enable_thinking' | 'issue'> {
   variables_json: string;
   enable_thinking: number;
 }
@@ -53,10 +52,8 @@ export interface Comparison {
   evaluations: Evaluation[];
 }
 
-export interface Issue {
-  id: number;
-  prompt_id: number | null;
-  evaluation_id: number | null;
+export interface EvaluationIssue {
+  evaluation_id: number;
   title: string;
   status: IssueStatus;
   note: string | null;
@@ -64,18 +61,25 @@ export interface Issue {
   resolved_version_id: number | null;
   created_at: number;
   updated_at: number;
-  evaluation: Evaluation | null;
   resolved_version: { id: number; name: string } | null;
 }
 
-interface IssueRow extends Omit<Issue, 'evaluation' | 'resolved_version'> {}
+export interface Issue extends EvaluationIssue {
+  id: number;
+  prompt_id: number | null;
+  evaluation: Evaluation;
+}
+
+interface IssueRow extends Omit<EvaluationIssue, 'resolved_version'> {}
 
 function mapEvaluation(row: EvaluationRow): Evaluation {
   const { variables_json, enable_thinking, ...rest } = row;
+  const issue = getEvaluationIssue(rest.id);
   return {
     ...rest,
     variables: JSON.parse(variables_json) as Record<string, string>,
     enable_thinking: enable_thinking === 1,
+    issue,
   };
 }
 
@@ -146,8 +150,7 @@ export function createComparison(
 
 export function listResults(promptId: number): { evaluations: Evaluation[]; comparisons: Comparison[] } {
   const standalone = (db.all(
-    `SELECT e.*,
-            (SELECT i.id FROM issues i WHERE i.evaluation_id = e.id ORDER BY i.id LIMIT 1) AS issue_id
+    `SELECT e.*
      FROM evaluations e
      WHERE e.prompt_id = ? AND e.batch_id IS NULL
      ORDER BY e.executed_at DESC, e.id DESC`,
@@ -167,15 +170,10 @@ export function listResults(promptId: number): { evaluations: Evaluation[]; comp
   return { evaluations: standalone, comparisons };
 }
 
-function evaluationHasIssue(id: number): boolean {
-  return db.get('SELECT 1 AS found FROM issues WHERE evaluation_id = ? LIMIT 1', [id]) !== null;
-}
-
-export function deleteEvaluation(id: number): 'deleted' | 'missing' | 'linked' | 'batched' {
+export function deleteEvaluation(id: number): 'deleted' | 'missing' | 'batched' {
   const evaluation = getEvaluation(id);
   if (!evaluation) return 'missing';
   if (evaluation.batch_id !== null) return 'batched';
-  if (evaluationHasIssue(id)) return 'linked';
   db.run('DELETE FROM evaluations WHERE id = ?', [id]);
   return 'deleted';
 }
@@ -200,61 +198,77 @@ export function updateComparisonNote(id: number, note: string | null): Compariso
   };
 }
 
-export function deleteComparison(id: number): 'deleted' | 'missing' | 'linked' {
+export function deleteComparison(id: number): 'deleted' | 'missing' {
   const batch = db.get('SELECT id FROM evaluation_batches WHERE id = ?', [id]);
   if (!batch) return 'missing';
-  const linked = db.get(
-    `SELECT 1 AS found FROM issues i
-     JOIN evaluations e ON e.id = i.evaluation_id
-     WHERE e.batch_id = ? LIMIT 1`,
-    [id]
-  );
-  if (linked) return 'linked';
   db.run('DELETE FROM evaluation_batches WHERE id = ?', [id]);
   return 'deleted';
 }
 
-function mapIssue(row: IssueRow): Issue {
+function mapEvaluationIssue(row: IssueRow): EvaluationIssue {
   const resolvedVersion = row.resolved_version_id
     ? db.get('SELECT id, name FROM versions WHERE id = ?', [row.resolved_version_id]) as { id: number; name: string } | null
     : null;
   return {
     ...row,
-    evaluation: row.evaluation_id ? getEvaluation(row.evaluation_id) : null,
     resolved_version: resolvedVersion,
   };
 }
 
-export function getIssue(id: number): Issue | null {
-  const row = db.get('SELECT * FROM issues WHERE id = ?', [id]) as unknown as IssueRow | null;
+function getEvaluationIssue(evaluationId: number): EvaluationIssue | null {
+  const row = db.get('SELECT * FROM issues WHERE evaluation_id = ?', [evaluationId]) as unknown as IssueRow | null;
+  return row ? mapEvaluationIssue(row) : null;
+}
+
+function mapIssue(row: IssueRow): Issue {
+  const evaluation = getEvaluation(row.evaluation_id);
+  if (!evaluation) throw new Error(`Issue ${row.evaluation_id} has no evaluation`);
+  return {
+    ...mapEvaluationIssue(row),
+    id: row.evaluation_id,
+    prompt_id: evaluation.prompt_id,
+    evaluation,
+  };
+}
+
+export function getIssue(evaluationId: number): Issue | null {
+  const row = db.get('SELECT * FROM issues WHERE evaluation_id = ?', [evaluationId]) as unknown as IssueRow | null;
   return row ? mapIssue(row) : null;
 }
 
 export function listIssues(promptId: number): Issue[] {
   return (db.all(
-    "SELECT * FROM issues WHERE prompt_id = ? ORDER BY status = 'open' DESC, created_at DESC, id DESC",
+    `SELECT i.*
+     FROM issues i
+     JOIN evaluations e ON e.id = i.evaluation_id
+     WHERE e.prompt_id = ?
+     ORDER BY i.status = 'open' DESC, i.created_at DESC, i.evaluation_id DESC`,
     [promptId]
   ) as unknown as IssueRow[]).map(mapIssue);
 }
 
 export function createIssue(
-  promptId: number,
   title: string,
   note: string | null,
   evaluationId: number | null,
   evaluationInput?: EvaluationInput
-): Issue {
+): Issue | 'duplicate' {
   db.run('BEGIN IMMEDIATE');
   try {
     const linkedEvaluationId = evaluationInput
       ? insertEvaluation(evaluationInput, null).id
       : evaluationId;
-    const result = db.run(
-      "INSERT INTO issues (prompt_id, evaluation_id, title, status, note) VALUES (?, ?, ?, 'open', ?)",
-      [promptId, linkedEvaluationId, title, note]
+    if (linkedEvaluationId === null) throw new Error('Issue requires an evaluation');
+    if (getEvaluationIssue(linkedEvaluationId)) {
+      db.run('ROLLBACK');
+      return 'duplicate';
+    }
+    db.run(
+      "INSERT INTO issues (evaluation_id, title, status, note) VALUES (?, ?, 'open', ?)",
+      [linkedEvaluationId, title, note]
     );
     db.run('COMMIT');
-    return getIssue(Number(result.lastInsertRowid))!;
+    return getIssue(linkedEvaluationId)!;
   } catch (error) {
     db.run('ROLLBACK');
     throw error;
@@ -282,11 +296,11 @@ export function updateIssue(
   if (fields.length) {
     fields.push('updated_at = unixepoch()');
     params.push(id);
-    db.run(`UPDATE issues SET ${fields.join(', ')} WHERE id = ?`, params);
+    db.run(`UPDATE issues SET ${fields.join(', ')} WHERE evaluation_id = ?`, params);
   }
   return getIssue(id);
 }
 
 export function deleteIssue(id: number): boolean {
-  return db.run('DELETE FROM issues WHERE id = ?', [id]).changes > 0;
+  return db.run('DELETE FROM issues WHERE evaluation_id = ?', [id]).changes > 0;
 }

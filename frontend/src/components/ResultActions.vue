@@ -1,15 +1,15 @@
 <script setup lang="ts">
 import { ref } from 'vue';
-import { api, type EvaluationInput } from '../api';
+import { api, type EvaluationInput, type EvaluationIssue, type Issue } from '../api';
 
 const props = defineProps<{
-  evaluation: EvaluationInput;
+  evaluation: EvaluationInput & { issue?: EvaluationIssue | null };
   savedId: number | null;
   copyText: string;
 }>();
 const emit = defineEmits<{
   saved: [id: number];
-  issueCreated: [];
+  issueCreated: [issue: Issue];
 }>();
 
 const saving = ref(false);
@@ -44,6 +44,7 @@ async function saveResult() {
 }
 
 function openIssue() {
+  if (props.evaluation.issue) return;
   title.value = '';
   note.value = '';
   error.value = null;
@@ -64,7 +65,7 @@ async function createIssue() {
     });
     if (issue.evaluation_id) emit('saved', issue.evaluation_id);
     showIssue.value = false;
-    emit('issueCreated');
+    emit('issueCreated', issue);
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Could not create issue';
   } finally {
@@ -100,7 +101,12 @@ async function createIssue() {
     </button>
 
     <!-- Flag as issue -->
-    <button class="icon-btn issue" :disabled="saving" title="Flag as issue" @click="openIssue">
+    <button
+      class="icon-btn issue"
+      :disabled="saving || !!evaluation.issue"
+      :title="evaluation.issue ? 'Already flagged as issue' : 'Flag as issue'"
+      @click="openIssue"
+    >
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/>
         <line x1="4" y1="22" x2="4" y2="15"/>

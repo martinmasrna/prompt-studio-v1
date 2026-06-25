@@ -185,7 +185,6 @@ router.patch('/comparisons/:id', (req, res) => {
 router.delete('/evaluations/:id', (req, res) => {
   const outcome = deleteEvaluation(Number(req.params.id));
   if (outcome === 'missing') { res.status(404).json({ error: 'Evaluation not found' }); return; }
-  if (outcome === 'linked') { res.status(409).json({ error: 'Delete linked issues before deleting this result' }); return; }
   if (outcome === 'batched') { res.status(409).json({ error: 'Delete the containing comparison instead' }); return; }
   res.json({ ok: true });
 });
@@ -193,7 +192,6 @@ router.delete('/evaluations/:id', (req, res) => {
 router.delete('/comparisons/:id', (req, res) => {
   const outcome = deleteComparison(Number(req.params.id));
   if (outcome === 'missing') { res.status(404).json({ error: 'Comparison not found' }); return; }
-  if (outcome === 'linked') { res.status(409).json({ error: 'Delete linked issues before deleting this comparison' }); return; }
   res.json({ ok: true });
 });
 
@@ -208,9 +206,6 @@ router.get('/prompts/:promptId/issues', (req, res) => {
 router.get('/issues/:id/prompt-doctor', (req, res) => {
   const issue = getIssue(Number(req.params.id));
   if (!issue) { res.status(404).json({ error: 'Issue not found' }); return; }
-  if (!issue.evaluation) {
-    res.status(409).json({ error: 'Prompt Doctor requires a linked evaluation' }); return;
-  }
   res.json({ prompt: generatePromptDoctorPrompt(issue) });
 });
 
@@ -224,12 +219,15 @@ router.post('/prompts/:promptId/issues', (req, res) => {
     const evaluationId = nullableInteger(body, 'evaluation_id');
     const evaluationInput = body.evaluation === undefined ? undefined : parseEvaluation(body.evaluation);
     if (evaluationId !== null && evaluationInput) throw new ValidationError('provide evaluation_id or evaluation, not both');
+    if (evaluationId === null && !evaluationInput) throw new ValidationError('Issue requires a linked result');
     if (evaluationInput) validateLineage(evaluationInput, promptId);
     if (evaluationId !== null) {
       const evaluation = getEvaluation(evaluationId);
       if (!evaluation || evaluation.prompt_id !== promptId) throw new ValidationError('Evaluation does not belong to prompt');
     }
-    res.status(201).json(createIssue(promptId, title, note, evaluationId, evaluationInput));
+    const issue = createIssue(title, note, evaluationId, evaluationInput);
+    if (issue === 'duplicate') { res.status(409).json({ error: 'Result is already flagged as an issue' }); return; }
+    res.status(201).json(issue);
   } catch (error) {
     if (!handleValidation(res, error)) throw error;
   }

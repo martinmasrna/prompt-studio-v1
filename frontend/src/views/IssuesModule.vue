@@ -2,14 +2,12 @@
 import { computed, nextTick, ref, watch } from 'vue';
 import { api, type Issue } from '../api';
 import { activeIssueId, activePromptData, versions as promptVersions } from '../store/editor';
+import ResultCard from '../components/ResultCard.vue';
 
 const issues = ref<Issue[]>([]);
 const filter = ref<'open' | 'diagnosed' | 'closed'>('open');
 const loading = ref(false);
 const error = ref<string | null>(null);
-const showNew = ref(false);
-const newTitle = ref('');
-const newNote = ref('');
 const editingId = ref<number | null>(null);
 const editTitle = ref('');
 const editNote = ref('');
@@ -25,10 +23,22 @@ const resolutionNote = ref('');
 const resolvedVersionId = ref('');
 const resolutionError = ref<string | null>(null);
 const savingResolution = ref(false);
+const openMenuId = ref<number | null>(null);
 let copiedResetTimer: ReturnType<typeof setTimeout> | null = null;
 
 const visibleIssues = computed(() => issues.value.filter(issue => issue.status === filter.value));
-function formatDate(seconds: number) { return new Date(seconds * 1000).toLocaleString(); }
+const statusCount = (status: Issue['status']) => issues.value.filter(issue => issue.status === status).length;
+
+function replaceIssue(updated: Issue) {
+  const index = issues.value.findIndex(item => item.id === updated.id);
+  if (index >= 0) issues.value[index] = updated;
+}
+
+function removeLocalIssue(issue: Issue) {
+  issues.value = issues.value.filter(item => item.id !== issue.id);
+}
+
+function toggleMenu(id: number) { openMenuId.value = openMenuId.value === id ? null : id; }
 
 async function load() {
   const promptId = activePromptData.value?.id;
@@ -40,29 +50,8 @@ async function load() {
   finally { loading.value = false; }
 }
 
-function openNew() {
-  newTitle.value = '';
-  newNote.value = '';
-  showNew.value = true;
-}
-
-async function createManualIssue() {
-  const promptId = activePromptData.value?.id;
-  if (!promptId || !newTitle.value.trim()) return;
-  error.value = null;
-  try {
-    const issue = await api.issues.create(promptId, {
-      title: newTitle.value.trim(), note: newNote.value.trim() || null,
-    });
-    issues.value.unshift(issue);
-    showNew.value = false;
-    filter.value = 'open';
-  } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : 'Could not create issue';
-  }
-}
-
 async function toggle(issue: Issue) {
+  openMenuId.value = null;
   if (issue.status !== 'closed') {
     resolutionIssue.value = issue;
     resolutionTargetStatus.value = issue.status === 'open' ? 'diagnosed' : 'closed';
@@ -74,8 +63,7 @@ async function toggle(issue: Issue) {
   }
   try {
     const updated = await api.issues.update(issue.id, { status: 'diagnosed' });
-    const index = issues.value.findIndex(item => item.id === issue.id);
-    if (index >= 0) issues.value[index] = updated;
+    replaceIssue(updated);
   } catch (cause) { alert(cause instanceof Error ? cause.message : 'Could not update issue'); }
 }
 
@@ -89,8 +77,7 @@ async function saveResolution() {
       resolution_note: resolutionNote.value.trim() || null,
       resolved_version_id: resolvedVersionId.value ? Number(resolvedVersionId.value) : null,
     });
-    const index = issues.value.findIndex(item => item.id === updated.id);
-    if (index >= 0) issues.value[index] = updated;
+    replaceIssue(updated);
     showResolution.value = false;
     resolutionIssue.value = null;
   } catch (cause) {
@@ -101,6 +88,7 @@ async function saveResolution() {
 }
 
 function beginEdit(issue: Issue) {
+  openMenuId.value = null;
   editingId.value = issue.id;
   editTitle.value = issue.title;
   editNote.value = issue.note ?? '';
@@ -112,22 +100,35 @@ async function saveEdit(issue: Issue) {
     const updated = await api.issues.update(issue.id, {
       title: editTitle.value.trim(), note: editNote.value.trim() || null,
     });
-    const index = issues.value.findIndex(item => item.id === issue.id);
-    if (index >= 0) issues.value[index] = updated;
+    replaceIssue(updated);
     editingId.value = null;
   } catch (cause) { alert(cause instanceof Error ? cause.message : 'Could not update issue'); }
 }
 
 async function remove(issue: Issue) {
-  if (!confirm(`Delete issue "${issue.title}"?`)) return;
+  openMenuId.value = null;
   try {
-    await api.issues.delete(issue.id);
-    issues.value = issues.value.filter(item => item.id !== issue.id);
+    if (confirm('Remove the issue flag and keep this saved result?')) {
+      await api.issues.delete(issue.id);
+      removeLocalIssue(issue);
+      return;
+    }
+
+    if (issue.evaluation.batch_id !== null) {
+      if (!confirm('Delete the containing comparison and both saved results?')) return;
+      await api.records.deleteComparison(issue.evaluation.batch_id);
+      issues.value = issues.value.filter(item => item.evaluation.batch_id !== issue.evaluation.batch_id);
+      return;
+    }
+
+    if (!confirm('Delete this saved result and its issue metadata?')) return;
+    await api.records.deleteEvaluation(issue.id);
+    removeLocalIssue(issue);
   } catch (cause) { alert(cause instanceof Error ? cause.message : 'Could not delete issue'); }
 }
 
 async function openPromptDoctor(issue: Issue) {
-  if (!issue.evaluation) return;
+  openMenuId.value = null;
   showDoctor.value = true;
   doctorLoading.value = true;
   doctorPrompt.value = '';
@@ -176,45 +177,74 @@ watch([issues, activeIssueId], async () => {
 <template>
   <div class="issues-view">
     <header>
-      <div><h1>Issues</h1><p>Tracked problems and their saved evidence.</p></div>
-      <button class="btn primary" @click="openNew">New issue</button>
+      <div><h1>Issues</h1><p>Flagged results, diagnosis notes, and resolution tracking.</p></div>
     </header>
     <div class="filters">
-      <button :class="{ active: filter === 'open' }" @click="filter = 'open'">Open ({{ issues.filter(i => i.status === 'open').length }})</button>
-      <button :class="{ active: filter === 'diagnosed' }" @click="filter = 'diagnosed'">Diagnosed ({{ issues.filter(i => i.status === 'diagnosed').length }})</button>
-      <button :class="{ active: filter === 'closed' }" @click="filter = 'closed'">Closed ({{ issues.filter(i => i.status === 'closed').length }})</button>
+      <button :class="{ active: filter === 'open' }" @click="filter = 'open'">Open ({{ statusCount('open') }})</button>
+      <button :class="{ active: filter === 'diagnosed' }" @click="filter = 'diagnosed'">Diagnosed ({{ statusCount('diagnosed') }})</button>
+      <button :class="{ active: filter === 'closed' }" @click="filter = 'closed'">Closed ({{ statusCount('closed') }})</button>
     </div>
 
-    <p v-if="loading" class="empty">Loading…</p>
+    <p v-if="loading" class="empty">Loading...</p>
     <p v-else-if="error" class="error">{{ error }}</p>
     <p v-else-if="!visibleIssues.length" class="empty">No {{ filter }} issues.</p>
 
     <div class="issue-list">
-      <article
+      <ResultCard
         v-for="issue in visibleIssues"
         :id="`issue-${issue.id}`"
         :key="issue.id"
-        class="issue-card"
-        :class="{ selected: activeIssueId === issue.id }"
-        @click="activeIssueId = issue.id"
+        :evaluation="issue.evaluation"
+        :title="issue.title"
+        :date-at="issue.created_at"
       >
-        <template v-if="editingId === issue.id">
-          <input v-model="editTitle" class="title-input" />
-          <textarea v-model="editNote" rows="4" placeholder="Optional note" />
-          <div class="actions"><button class="btn" @click="editingId = null">Cancel</button><button class="btn primary" @click="saveEdit(issue)">Save</button></div>
+        <template #badge>
+          <span class="status" :class="issue.status">{{ issue.status }}</span>
         </template>
-        <template v-else>
-          <div class="issue-head">
-            <div><span class="status" :class="issue.status">{{ issue.status }}</span><h2>{{ issue.title }}</h2></div>
-            <span>{{ formatDate(issue.created_at) }}</span>
+
+        <template #actions>
+          <div class="issue-actions">
+            <button
+              v-if="issue.status === 'open'"
+              class="btn doctor"
+              title="Prepare a diagnostic prompt"
+              @click.stop="openPromptDoctor(issue)"
+            >
+              <svg class="doctor-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round">
+                <path d="M12 3l2 5 5 2-5 2-2 5-2-5-5-2 5-2 2-5z" />
+                <path d="M6 15l1 2 2 1-2 1-1 2-1-2-2-1 2-1 1-2z" />
+              </svg>
+              <span>Prompt Doctor</span>
+            </button>
+            <div class="menu-wrap">
+              <button class="kebab" aria-label="Issue actions" @click.stop="toggleMenu(issue.id)">&#8942;</button>
+              <template v-if="openMenuId === issue.id">
+                <div class="menu-backdrop" @click.stop="openMenuId = null" />
+                <div class="menu" role="menu" @click.stop>
+                  <button role="menuitem" @click="beginEdit(issue)">Edit issue</button>
+                  <button role="menuitem" @click="toggle(issue)">
+                    {{ issue.status === 'open' ? 'Mark diagnosed' : issue.status === 'diagnosed' ? 'Close' : 'Reopen' }}
+                  </button>
+                  <button role="menuitem" class="danger" @click="remove(issue)">Delete</button>
+                </div>
+              </template>
+            </div>
           </div>
-          <p v-if="issue.note" class="note">{{ issue.note }}</p>
-          <details v-if="issue.evaluation" :open="activeIssueId === issue.id">
-            <summary>Linked result · {{ issue.evaluation.version_name_snapshot }} · {{ issue.evaluation.model_label_snapshot }}</summary>
-            <div class="evidence">{{ issue.evaluation.response_text || issue.evaluation.error_text || '(empty response)' }}</div>
-            <pre>{{ issue.evaluation.rendered_prompt_snapshot }}</pre>
-          </details>
-          <p v-else class="manual">Manual issue · no result linked</p>
+        </template>
+
+        <template #note>
+          <div v-if="editingId === issue.id" class="issue-edit">
+            <input v-model="editTitle" class="title-input" />
+            <textarea v-model="editNote" rows="4" placeholder="Issue note" />
+            <div class="actions">
+              <button class="btn" @click.stop="editingId = null">Cancel</button>
+              <button class="btn primary" @click.stop="saveEdit(issue)">Save</button>
+            </div>
+          </div>
+          <p v-else-if="issue.note" class="note" @click.stop="beginEdit(issue)">{{ issue.note }}</p>
+        </template>
+
+        <template #after-evidence>
           <section v-if="issue.status !== 'open' && (issue.resolution_note || issue.resolved_version)" class="resolution">
             <strong>{{ issue.status === 'diagnosed' ? 'Diagnosis' : 'Resolution' }}</strong>
             <p v-if="issue.resolution_note">{{ issue.resolution_note }}</p>
@@ -222,35 +252,9 @@ watch([issues, activeIssueId], async () => {
               {{ issue.status === 'diagnosed' ? 'Planned version' : 'Resolved in version' }}: {{ issue.resolved_version.name }}
             </span>
           </section>
-          <div class="actions">
-            <button
-              v-if="issue.status === 'open'"
-              class="btn doctor"
-              :disabled="!issue.evaluation"
-              :title="issue.evaluation ? 'Prepare a diagnostic prompt' : 'Prompt Doctor requires a linked result'"
-              @click="openPromptDoctor(issue)"
-            >Prompt Doctor</button>
-            <button class="btn" @click="beginEdit(issue)">Edit</button>
-            <button class="btn" @click="toggle(issue)">
-              {{ issue.status === 'open' ? 'Mark diagnosed' : issue.status === 'diagnosed' ? 'Close' : 'Reopen' }}
-            </button>
-            <button class="btn danger" @click="remove(issue)">Delete</button>
-          </div>
         </template>
-      </article>
+      </ResultCard>
     </div>
-
-    <Teleport to="body">
-      <div v-if="showNew" class="overlay" @click.self="showNew = false" @keydown.esc.window="showNew = false">
-        <div class="modal">
-          <h2>New manual issue</h2>
-          <input v-model="newTitle" autofocus placeholder="Issue title" @keydown.enter="createManualIssue" />
-          <textarea v-model="newNote" rows="5" placeholder="Optional note" />
-          <p v-if="error" class="error">{{ error }}</p>
-          <div class="actions"><button class="btn" @click="showNew = false">Cancel</button><button class="btn primary" :disabled="!newTitle.trim()" @click="createManualIssue">Create issue</button></div>
-        </div>
-      </div>
-    </Teleport>
 
     <Teleport to="body">
       <div v-if="showResolution" class="overlay" @click.self="showResolution = false" @keydown.esc.window="showResolution = false">
@@ -275,7 +279,7 @@ watch([issues, activeIssueId], async () => {
             <select v-model="resolvedVersionId">
               <option value="">No linked version</option>
               <option v-for="version in promptVersions" :key="version.id" :value="String(version.id)">
-                {{ version.name }}{{ version.is_current ? ' · current' : '' }}
+                {{ version.name }}{{ version.is_current ? ' - current' : '' }}
               </option>
             </select>
           </label>
@@ -284,7 +288,7 @@ watch([issues, activeIssueId], async () => {
             <button class="btn" :disabled="savingResolution" @click="showResolution = false">Cancel</button>
             <button class="btn primary" :disabled="savingResolution" @click="saveResolution">
               {{ savingResolution
-                ? 'Saving…'
+                ? 'Saving...'
                 : resolutionTargetStatus === 'diagnosed' ? 'Mark diagnosed' : 'Close issue' }}
             </button>
           </div>
@@ -302,7 +306,7 @@ watch([issues, activeIssueId], async () => {
             </div>
             <button class="modal-close" aria-label="Close Prompt Doctor" @click="closePromptDoctor">&times;</button>
           </div>
-          <p v-if="doctorLoading" class="empty">Preparing diagnostic prompt…</p>
+          <p v-if="doctorLoading" class="empty">Preparing diagnostic prompt...</p>
           <p v-if="doctorError" class="error">{{ doctorError }}</p>
           <textarea
             v-if="doctorPrompt"
@@ -324,24 +328,50 @@ watch([issues, activeIssueId], async () => {
 </template>
 
 <style scoped>
-.issues-view { flex: 1; overflow-y: auto; padding: 32px 38px 60px; }
-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; } h1 { font-size: 22px; } header p { margin-top: 5px; color: var(--text-muted); font-size: 13px; }
+.issues-view { flex: 1; overflow-y: auto; padding: 32px 38px 60px; background: var(--bg); }
+header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
+h1 { font-size: 22px; }
+header p { margin-top: 5px; color: var(--text-muted); font-size: 13px; }
 .filters { display: flex; gap: 4px; margin-bottom: 18px; border-bottom: 1px solid var(--border); }
-.filters button { padding: 7px 12px; border: none; border-bottom: 2px solid transparent; background: none; color: var(--text-muted); cursor: pointer; }
+.filters button { padding: 7px 12px; border: none; border-bottom: 2px solid transparent; background: none; color: var(--text-muted); cursor: pointer; font: inherit; font-size: 12px; }
 .filters button.active { border-bottom-color: var(--text-primary); color: var(--text-primary); }
-.issue-list { display: flex; flex-direction: column; gap: 12px; }.issue-card { padding: 17px 18px; border: 1px solid var(--border); border-radius: 7px; }
-.issue-card.selected { border-color: #9a5a20; box-shadow: 0 0 0 2px rgba(154,90,32,.12); }
-.issue-head, .issue-head > div { display: flex; justify-content: space-between; align-items: center; gap: 9px; }.issue-head > span { color: var(--text-muted); font-size: 11px; }.issue-head h2 { font-size: 14px; }
-.status { padding: 2px 7px; border-radius: 3px; font-size: 9px; font-weight: 700; text-transform: uppercase; }.status.open { background: #fff2d9; color: #9a5a20; }.status.diagnosed { background: #eee7f8; color: #7654a8; }.status.closed { background: var(--bg-selected); color: var(--text-muted); }
-.note { margin-top: 10px; color: var(--text-secondary); font-size: 13px; white-space: pre-wrap; }.manual { margin-top: 10px; color: var(--text-faint); font-size: 11px; }
-.resolution { margin-top: 12px; padding: 11px 12px; border-left: 3px solid #78977b; background: var(--bg-sunken); color: var(--text-secondary); font-size: 12px; }
+.issue-list { display: flex; flex-direction: column; gap: 14px; }
+.issue-actions { display: flex; align-items: center; gap: 7px; flex: none; }
+.status { padding: 2px 7px; border-radius: 3px; font-size: 9px; font-weight: 700; text-transform: uppercase; }
+.status.open { background: #fff2d9; color: #9a5a20; }
+.status.diagnosed { background: #eee7f8; color: #7654a8; }
+.status.closed { background: var(--bg-selected); color: var(--text-muted); }
+.note { margin: 0 0 16px; padding: 6px 10px; border-left: 3px solid #9a5a20; background: var(--bg-sunken); color: var(--text-secondary); font-size: 12px; line-height: 1.45; cursor: pointer; white-space: pre-wrap; }
+.note:hover { color: var(--text-primary); }
+.issue-edit { margin: 0 0 16px; }
+.resolution { margin-top: 14px; padding: 11px 12px; border-left: 3px solid #78977b; background: var(--bg-sunken); color: var(--text-secondary); font-size: 12px; }
 .resolution strong { display: block; margin-bottom: 5px; color: var(--text-primary); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
-.resolution p { white-space: pre-wrap; line-height: 1.5; }.resolution span { display: block; margin-top: 7px; color: #4f7a52; }
-details { margin-top: 12px; font-size: 11px; color: var(--text-muted); } summary { cursor: pointer; }.evidence, pre { margin-top: 9px; padding: 10px; background: var(--bg-sunken); white-space: pre-wrap; color: var(--text-secondary); font-size: 12px; line-height: 1.5; } pre { font-family: var(--font-mono); }
-.actions { display: flex; justify-content: flex-end; gap: 7px; margin-top: 13px; }.btn { padding: 5px 11px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text-muted); font: inherit; font-size: 11px; cursor: pointer; }.btn.primary { background: #1a1a1a; color: #fff; }.btn.doctor { color: #7654a8; }.btn.danger:hover { color: #b33; }.btn:disabled { opacity: .5; cursor: default; }
-input, textarea { width: 100%; padding: 9px 10px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg); color: var(--text-primary); font: inherit; }.title-input { margin-bottom: 9px; font-weight: 600; }
-.empty { color: var(--text-faint); font-size: 13px; }.error { color: #c04040; }
-.overlay { position: fixed; inset: 0; z-index: 1200; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.55); }.modal { width: min(480px,90vw); display: flex; flex-direction: column; gap: 13px; padding: 22px; border-radius: 8px; background: var(--bg); }.modal h2 { font-size: 16px; }
+.resolution p { white-space: pre-wrap; line-height: 1.5; }
+.resolution span { display: block; margin-top: 7px; color: #4f7a52; }
+.actions { display: flex; justify-content: flex-end; gap: 7px; margin-top: 13px; }
+.btn { padding: 5px 11px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text-muted); font: inherit; font-size: 11px; cursor: pointer; }
+.btn.primary { background: #1a1a1a; color: #fff; }
+.btn.doctor { display: inline-flex; align-items: center; gap: 5px; border-color: transparent; color: var(--text-primary); }
+.btn.doctor:hover:not(:disabled) { background: var(--bg-selected); }
+.doctor-icon { width: 13px; height: 13px; flex: none; }
+.btn.danger:hover { color: #b33; }
+.btn:disabled { opacity: .5; cursor: default; }
+.menu-wrap { position: relative; }
+.kebab { padding: 2px 6px; border: none; border-radius: 4px; background: none; color: var(--text-muted); font-size: 16px; line-height: 1; cursor: pointer; }
+.kebab:hover { background: var(--bg-selected); color: var(--text-primary); }
+.menu-backdrop { position: fixed; inset: 0; z-index: 1100; }
+.menu { position: absolute; top: 100%; right: 0; z-index: 1101; min-width: 150px; margin-top: 4px; padding: 4px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); box-shadow: 0 8px 24px rgba(0,0,0,.14); display: flex; flex-direction: column; }
+.menu button { padding: 7px 10px; border: none; border-radius: 4px; background: none; color: var(--text-secondary); font: inherit; font-size: 12px; text-align: left; cursor: pointer; }
+.menu button:hover { background: var(--bg-selected); color: var(--text-primary); }
+.menu button.danger { color: #b33; }
+.menu button.danger:hover { background: #fdeaea; }
+input, textarea { width: 100%; padding: 9px 10px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg); color: var(--text-primary); font: inherit; }
+.title-input { margin-bottom: 9px; font-weight: 600; }
+.empty { color: var(--text-faint); font-size: 13px; }
+.error { color: #c04040; }
+.overlay { position: fixed; inset: 0; z-index: 1200; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.55); }
+.modal { width: min(480px,90vw); display: flex; flex-direction: column; gap: 13px; padding: 22px; border-radius: 8px; background: var(--bg); }
+.modal h2 { font-size: 16px; }
 .modal-sub { color: var(--text-muted); font-size: 12px; line-height: 1.45; }
 .resolution-modal { width: min(640px, 92vw); max-height: 90vh; }
 .resolution-modal label { display: flex; flex-direction: column; gap: 6px; color: var(--text-secondary); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
