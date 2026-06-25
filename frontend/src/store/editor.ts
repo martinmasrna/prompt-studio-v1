@@ -2,7 +2,7 @@
 // means any component can import and mutate without prop-drilling or Pinia setup.
 import { ref } from 'vue';
 import type { EvaluationInput, PromptDetail, VersionInfo } from '../api';
-import { applyConfigById } from './configs';
+import { applyConfigById, selectedConfigId } from './configs';
 
 export type ModuleTab = 'overview' | 'ab-tester' | 'results' | 'issues';
 
@@ -29,6 +29,11 @@ export const newVersionDraftText = ref<string | null>(null);
 export const activeSystemPrompt = ref<string>('');
 export const savedSystemPrompt  = ref<string>('');
 
+// The version's persisted default config. `selectedConfigId` (in the config
+// store) is the live selection; `savedConfigId` is the version's baseline, used
+// to tell whether the version has an unsaved default-config change.
+export const savedConfigId = ref<number | null>(null);
+
 export function openIssue(evaluationId: number) {
   activeIssueEvaluationId.value = evaluationId;
   activeModule.value = 'issues';
@@ -43,6 +48,9 @@ export function applyActiveVersion(version: Pick<VersionInfo, 'id' | 'text' | 's
   activeSystemPrompt.value = version.system_prompt;
   savedSystemPrompt.value = version.system_prompt;
   applyConfigById(version.default_config_id);
+  // Capture the resolved selection (not the raw default_config_id) so a version
+  // whose default config no longer exists isn't reported as dirty on load.
+  savedConfigId.value = selectedConfigId.value;
 }
 
 // Clear active-version state when there is no prompt/version selected.
@@ -52,6 +60,7 @@ export function clearActiveVersion(): void {
   activeSystemPrompt.value = '';
   savedSystemPrompt.value = '';
   applyConfigById(null);
+  savedConfigId.value = null;
 }
 
 // Variable values are shared between LeftPanel and SandboxPanel

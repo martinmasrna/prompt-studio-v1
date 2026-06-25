@@ -5,7 +5,7 @@ import { ref, watch } from 'vue';
 import { api } from '../api';
 import {
   activePromptData, activeVersionId, activeVersionText,
-  activeSystemPrompt, savedSystemPrompt,
+  activeSystemPrompt, savedSystemPrompt, savedConfigId,
   versions, showSaveModal, newVersionDraftText,
 } from '../store/editor';
 import { selectedConfigId } from '../store/configs';
@@ -33,6 +33,7 @@ async function confirmSaveVersion() {
     activeVersionId.value = result.id;
     activeVersionText.value = text;
     savedSystemPrompt.value = activeSystemPrompt.value;
+    savedConfigId.value = selectedConfigId.value;
     showSaveModal.value = false;
     saveName.value = '';
     saveNote.value = '';

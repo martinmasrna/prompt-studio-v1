@@ -5,7 +5,7 @@ import { ref, computed, watch } from 'vue';
 import { api } from '../api';
 import {
   activePromptData, activeVersionId, activeVersionText,
-  activeSystemPrompt, savedSystemPrompt, applyActiveVersion,
+  activeSystemPrompt, savedSystemPrompt, savedConfigId, applyActiveVersion,
   versions, variableValues, showSaveModal, newVersionDraftText,
 } from '../store/editor';
 import { selectedConfigId } from '../store/configs';
@@ -31,12 +31,14 @@ watch(activePromptData, data => {
 }, { immediate: true });
 
 // ── Dirty state ────────────────────────────────────────────────────────────────
-// True when the editor text or the version's system prompt differs from what was
-// last saved for the selected version. (The system prompt is edited in the
-// sandbox / A·B advanced panels but belongs to the version.)
+// True when the editor text, the version's system prompt, or its default config
+// differs from what was last saved for the selected version. (The system prompt
+// is edited in the sandbox / A·B advanced panels, and the default config is the
+// shared parameter-panel selection, but both belong to the version.)
 const isDirty = computed(() =>
   localText.value !== activeVersionText.value
   || activeSystemPrompt.value !== savedSystemPrompt.value
+  || selectedConfigId.value !== savedConfigId.value
 );
 
 // ── Versions UI ────────────────────────────────────────────────────────────────
@@ -185,6 +187,7 @@ async function saveChanges() {
     });
     activeVersionText.value = localText.value;
     savedSystemPrompt.value = activeSystemPrompt.value;
+    savedConfigId.value = selectedConfigId.value;
     // Keep the in-memory version list in sync so other views see the new state
     const v = versions.value.find(v => v.id === activeVersionId.value);
     if (v) {
