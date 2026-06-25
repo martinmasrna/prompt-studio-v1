@@ -59,6 +59,7 @@ export const RESULTS_SCHEMA_SQL = `
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     prompt_id  INTEGER REFERENCES prompts(id) ON DELETE SET NULL,
     kind       TEXT NOT NULL CHECK (kind IN ('comparison')),
+    note       TEXT,
     created_at INTEGER NOT NULL DEFAULT (unixepoch())
   );
 

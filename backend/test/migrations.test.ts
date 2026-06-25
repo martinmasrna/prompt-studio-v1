@@ -31,6 +31,7 @@ test('fresh migrations are complete and idempotent', () => withDatabase(db => {
     { version: 6, name: 'add_evaluation_note' },
     { version: 7, name: 'drop_prompt_description' },
     { version: 8, name: 'decompose_test_config' },
+    { version: 9, name: 'add_comparison_note' },
   ]);
   const promptColumns = db.all('PRAGMA table_info(prompts)') as unknown as Array<{ name: string }>;
   assert.ok(!promptColumns.some(column => column.name === 'description'));
@@ -42,6 +43,8 @@ test('fresh migrations are complete and idempotent', () => withDatabase(db => {
   assert.ok(issueColumns.some(column => column.name === 'resolved_version_id'));
   const evaluationColumns = db.all('PRAGMA table_info(evaluations)') as unknown as Array<{ name: string }>;
   assert.ok(evaluationColumns.some(column => column.name === 'note'));
+  const comparisonColumns = db.all('PRAGMA table_info(evaluation_batches)') as unknown as Array<{ name: string }>;
+  assert.ok(comparisonColumns.some(column => column.name === 'note'));
   // v8 moves sampling params into configs and the system prompt onto versions.
   const testCaseColumns = db.all('PRAGMA table_info(test_cases)') as unknown as Array<{ name: string }>;
   assert.ok(!testCaseColumns.some(column => column.name === 'temperature'));

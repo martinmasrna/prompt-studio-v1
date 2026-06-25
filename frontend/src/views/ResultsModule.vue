@@ -13,7 +13,7 @@ const loading = ref(false);
 const error = ref<string | null>(null);
 const filter = ref<'all' | 'manual' | 'issues'>('all');
 
-const editingNoteId = ref<number | null>(null);
+const editingNoteKey = ref<string | null>(null);
 const noteDraft = ref('');
 const savingNote = ref(false);
 
@@ -77,7 +77,7 @@ const RELATIVE_UNITS: Array<[Intl.RelativeTimeFormatUnit, number]> = [
   ['hour', 3600], ['minute', 60], ['second', 1],
 ];
 function formatRelative(seconds: number) {
-  const delta = seconds - Date.now() / 1000; // negative for the past
+  const delta = seconds - Date.now() / 1000;
   for (const [unit, unitSeconds] of RELATIVE_UNITS) {
     if (Math.abs(delta) >= unitSeconds || unit === 'second') {
       return relativeTimeFormat.format(Math.round(delta / unitSeconds), unit);
@@ -86,13 +86,21 @@ function formatRelative(seconds: number) {
   return relativeTimeFormat.format(0, 'second');
 }
 
+const evaluationNoteKey = (id: number) => `evaluation-${id}`;
+const comparisonNoteKey = (id: number) => `comparison-${id}`;
+
 function beginNoteEdit(evaluation: Evaluation) {
-  editingNoteId.value = evaluation.id;
+  editingNoteKey.value = evaluationNoteKey(evaluation.id);
   noteDraft.value = evaluation.note ?? '';
 }
 
+function beginComparisonNoteEdit(comparison: Comparison) {
+  editingNoteKey.value = comparisonNoteKey(comparison.id);
+  noteDraft.value = comparison.note ?? '';
+}
+
 function cancelNoteEdit() {
-  editingNoteId.value = null;
+  editingNoteKey.value = null;
   noteDraft.value = '';
 }
 
@@ -102,7 +110,21 @@ async function saveNote(evaluation: Evaluation) {
   try {
     const updated = await api.records.updateEvaluation(evaluation.id, { note: noteDraft.value.trim() || null });
     evaluation.note = updated.note;
-    editingNoteId.value = null;
+    editingNoteKey.value = null;
+  } catch (cause) {
+    alert(cause instanceof Error ? cause.message : 'Could not save note');
+  } finally {
+    savingNote.value = false;
+  }
+}
+
+async function saveComparisonNote(comparison: Comparison) {
+  if (savingNote.value) return;
+  savingNote.value = true;
+  try {
+    const updated = await api.records.updateComparison(comparison.id, { note: noteDraft.value.trim() || null });
+    comparison.note = updated.note;
+    editingNoteKey.value = null;
   } catch (cause) {
     alert(cause instanceof Error ? cause.message : 'Could not save note');
   } finally {
@@ -111,12 +133,17 @@ async function saveNote(evaluation: Evaluation) {
 }
 
 // Per-card actions menu (⋮).
-const openMenuId = ref<number | null>(null);
-function toggleMenu(id: number) { openMenuId.value = openMenuId.value === id ? null : id; }
+const openMenuId = ref<string | null>(null);
+function toggleMenu(id: string) { openMenuId.value = openMenuId.value === id ? null : id; }
 
 function menuNote(evaluation: Evaluation) {
   openMenuId.value = null;
   beginNoteEdit(evaluation);
+}
+
+function menuComparisonNote(comparison: Comparison) {
+  openMenuId.value = null;
+  beginComparisonNoteEdit(comparison);
 }
 
 // Flag-as-issue modal. Results are always already saved, so we link by evaluation_id.
@@ -182,6 +209,7 @@ async function removeEvaluation(evaluation: Evaluation) {
 }
 
 async function removeComparison(comparison: Comparison) {
+  openMenuId.value = null;
   if (!confirm('Delete this saved comparison and both results?')) return;
   try {
     await api.records.deleteComparison(comparison.id);
@@ -201,7 +229,6 @@ watch(() => activePromptData.value?.id, load, { immediate: true });
         <h1>Results</h1>
         <p>Explicitly saved run evidence and comparisons.</p>
       </div>
-      <button class="btn" @click="load">Refresh</button>
     </header>
 
     <div class="filters">
@@ -229,8 +256,8 @@ watch(() => activePromptData.value?.id, load, { immediate: true });
               <strong>{{ entry.value.test_name_snapshot || 'Scratch run' }}</strong>
             </div>
             <div class="menu-wrap">
-              <button class="kebab" aria-label="Result actions" @click="toggleMenu(entry.value.id)">⋮</button>
-              <template v-if="openMenuId === entry.value.id">
+              <button class="kebab" aria-label="Result actions" @click="toggleMenu(evaluationNoteKey(entry.value.id))">⋮</button>
+              <template v-if="openMenuId === evaluationNoteKey(entry.value.id)">
                 <div class="menu-backdrop" @click="openMenuId = null" />
                 <div class="menu" role="menu">
                   <button role="menuitem" @click="menuNote(entry.value)">{{ entry.value.note ? 'Edit note' : 'Add note' }}</button>
@@ -241,7 +268,7 @@ watch(() => activePromptData.value?.id, load, { immediate: true });
             </div>
           </div>
 
-          <div v-if="editingNoteId === entry.value.id" class="note-edit">
+          <div v-if="editingNoteKey === evaluationNoteKey(entry.value.id)" class="note-edit">
             <input
               v-model="noteDraft"
               class="note-input"
@@ -262,26 +289,29 @@ watch(() => activePromptData.value?.id, load, { immediate: true });
           <div class="io-grid">
             <section class="io-col">
               <span class="col-label">Prompt</span>
-              <div class="prompt-body">
-                <template
-                  v-for="(seg, i) in tokenizePrompt(entry.value.prompt_template_snapshot, entry.value.variables)"
-                  :key="i"
-                >
-                  <span v-if="seg.type === 'text'" class="tpl-text">{{ seg.value }}</span>
-                  <span v-else-if="seg.value === null" class="var-chip empty">{{ seg.name }} · empty</span>
-                  <span v-else-if="isShortValue(seg.value)" class="var-inline" :title="seg.name">{{ seg.value }}</span>
-                  <button
-                    v-else
-                    class="var-chip"
-                    :class="{ active: isVarExpanded(entry.value.id, seg.name) }"
-                    @click="toggleVar(entry.value.id, seg.name)"
-                  >{{ seg.name }} · {{ formatChars(seg.value.length) }} {{ isVarExpanded(entry.value.id, seg.name) ? '▾' : '▸' }}</button>
-                </template>
-              </div>
-              <div v-for="v in expandedVarsFor(entry.value)" :key="v.name" class="var-expand">
-                <div class="var-expand-head">{{ v.name }}</div>
-                <pre>{{ v.value }}</pre>
-              </div>
+              <ClampBlock>
+                <div class="prompt-body">
+                  <template
+                    v-for="(seg, i) in tokenizePrompt(entry.value.prompt_template_snapshot, entry.value.variables)"
+                    :key="i"
+                  >
+                    <span v-if="seg.type === 'text'" class="tpl-text">{{ seg.value }}</span>
+                    <span v-else-if="seg.value === null" class="var-chip empty">{{ seg.name }} · empty</span>
+                    <span v-else-if="isShortValue(seg.value)" class="var-inline" :title="seg.name">{{ seg.value }}</span>
+                    <button
+                      v-else
+                      class="var-chip"
+                      :class="{ active: isVarExpanded(entry.value.id, seg.name) }"
+                      @click="toggleVar(entry.value.id, seg.name)"
+                    >{{ seg.name }} · {{ formatChars(seg.value.length) }} {{ isVarExpanded(entry.value.id, seg.name) ? '▾' : '▸' }}</button>
+                  </template>
+                </div>
+                <div v-for="v in expandedVarsFor(entry.value)" :key="v.name" class="var-expand">
+                  <div class="var-expand-head">{{ v.name }}</div>
+                  <pre>{{ v.value }}</pre>
+                </div>
+              </ClampBlock>
+
             </section>
 
             <section class="io-col">
@@ -313,8 +343,34 @@ watch(() => activePromptData.value?.id, load, { immediate: true });
         <template v-else>
           <div class="record-head">
             <div><span class="badge">A/B</span><strong>Saved comparison</strong></div>
-            <span class="date">{{ formatDate(entry.at) }}</span>
+            <div class="menu-wrap">
+              <button class="kebab" aria-label="Comparison actions" @click="toggleMenu(comparisonNoteKey(entry.value.id))">⋮</button>
+              <template v-if="openMenuId === comparisonNoteKey(entry.value.id)">
+                <div class="menu-backdrop" @click="openMenuId = null" />
+                <div class="menu" role="menu">
+                  <button role="menuitem" @click="menuComparisonNote(entry.value)">{{ entry.value.note ? 'Edit note' : 'Add note' }}</button>
+                  <button role="menuitem" class="danger" @click="removeComparison(entry.value)">Delete</button>
+                </div>
+              </template>
+            </div>
           </div>
+          <div v-if="editingNoteKey === comparisonNoteKey(entry.value.id)" class="note-edit">
+            <input
+              v-model="noteDraft"
+              class="note-input"
+              placeholder="Short note about this comparison"
+              autofocus
+              @keydown.enter="saveComparisonNote(entry.value)"
+              @keydown.ctrl.s.prevent="saveComparisonNote(entry.value)"
+              @keydown.meta.s.prevent="saveComparisonNote(entry.value)"
+              @keydown.esc="cancelNoteEdit"
+            />
+            <button class="btn" :disabled="savingNote" @click="cancelNoteEdit">Cancel</button>
+            <button class="btn primary" :disabled="savingNote" @click="saveComparisonNote(entry.value)">
+              {{ savingNote ? 'Saving…' : 'Save' }}
+            </button>
+          </div>
+          <p v-else-if="entry.value.note" class="note" @click="beginComparisonNoteEdit(entry.value)">{{ entry.value.note }}</p>
           <div class="comparison-grid">
             <section v-for="(evaluation, index) in entry.value.evaluations" :key="evaluation.id" class="side">
               <h2>{{ index === 0 ? 'A' : 'B' }} · {{ evaluation.version_name_snapshot }}</h2>
@@ -330,7 +386,10 @@ watch(() => activePromptData.value?.id, load, { immediate: true });
               <ResultActions :evaluation="evaluation" :saved-id="evaluation.id" :copy-text="evaluation.response_text ?? ''" />
             </section>
           </div>
-          <footer><button class="btn danger" @click="removeComparison(entry.value)">Delete comparison</button></footer>
+          <div class="card-foot comparison-foot">
+            <span></span>
+            <span class="date" :title="formatDate(entry.at)">{{ formatRelative(entry.at) }}</span>
+          </div>
         </template>
       </article>
     </div>
@@ -378,6 +437,7 @@ h1 { font-size: 22px; font-weight: 600; } header p { margin-top: 5px; color: var
 .card-foot { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-top: 14px; }
 .card-foot .snapshot { flex: 1; min-width: 0; margin-top: 0; }
 .card-foot .date { flex: none; white-space: nowrap; }
+.comparison-foot { justify-content: flex-end; }
 
 /* Actions menu (⋮) */
 .menu-wrap { position: relative; }

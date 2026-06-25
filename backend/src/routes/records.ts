@@ -12,6 +12,7 @@ import {
   getIssue,
   listIssues,
   listResults,
+  updateComparisonNote,
   updateEvaluationNote,
   updateIssue,
   type EvaluationInput,
@@ -163,6 +164,18 @@ router.patch('/evaluations/:id', (req, res) => {
     if (!('note' in body)) { res.status(400).json({ error: 'note is required' }); return; }
     const updated = updateEvaluationNote(Number(req.params.id), nullableString(body, 'note'));
     if (!updated) { res.status(404).json({ error: 'Evaluation not found' }); return; }
+    res.json(updated);
+  } catch (error) {
+    if (!handleValidation(res, error)) throw error;
+  }
+});
+
+router.patch('/comparisons/:id', (req, res) => {
+  try {
+    const body = objectBody(req.body);
+    if (!('note' in body)) { res.status(400).json({ error: 'note is required' }); return; }
+    const updated = updateComparisonNote(Number(req.params.id), nullableString(body, 'note'));
+    if (!updated) { res.status(404).json({ error: 'Comparison not found' }); return; }
     res.json(updated);
   } catch (error) {
     if (!handleValidation(res, error)) throw error;

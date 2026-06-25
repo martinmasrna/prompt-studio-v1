@@ -205,7 +205,7 @@ test('results, comparisons, and issues API', async t => {
     const sideA = await requestJson<{ id: number }>(
       server.baseUrl, '/api/evaluations', jsonRequest('POST', { ...baseEvaluation, source: 'ab', response_text: 'A' })
     );
-    const comparison = await requestJson<{ id: number; evaluations: Array<{ id: number; response_text: string }> }>(
+    const comparison = await requestJson<{ id: number; note: string | null; evaluations: Array<{ id: number; response_text: string }> }>(
       server.baseUrl,
       '/api/comparisons',
       jsonRequest('POST', {
@@ -217,8 +217,21 @@ test('results, comparisons, and issues API', async t => {
       })
     );
     assert.equal(comparison.response.status, 201);
+    assert.equal(comparison.body.note, null);
     assert.equal(comparison.body.evaluations[0].id, sideA.body.id);
     assert.deepEqual(comparison.body.evaluations.map(item => item.response_text), ['A', 'B']);
+    const noted = await requestJson<{ note: string }>(
+      server.baseUrl,
+      `/api/comparisons/${comparison.body.id}`,
+      jsonRequest('PATCH', { note: 'Candidate beats baseline' })
+    );
+    assert.equal(noted.response.status, 200);
+    assert.equal(noted.body.note, 'Candidate beats baseline');
+    const results = await requestJson<{ comparisons: Array<{ id: number; note: string | null }> }>(
+      server.baseUrl,
+      `/api/prompts/${prompt.body.id}/results`
+    );
+    assert.equal(results.body.comparisons.find(item => item.id === comparison.body.id)?.note, 'Candidate beats baseline');
     assert.equal((await fetch(`${server.baseUrl}/api/evaluations/${sideA.body.id}`, { method: 'DELETE' })).status, 409);
     assert.equal((await fetch(`${server.baseUrl}/api/comparisons/${comparison.body.id}`, { method: 'DELETE' })).status, 200);
   });

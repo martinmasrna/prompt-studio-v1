@@ -133,17 +133,6 @@ async function menuRemove() {
           <span class="entity-plus">+</span>
           <span>New scenario</span>
         </button>
-        <button
-          class="entity-row"
-          :class="{ current: selectedTestCaseId === null }"
-          role="menuitem"
-          @click="chooseId(null)"
-        >
-          <span class="entity-row-main">
-            <span class="entity-row-title">Scratch</span>
-            <span class="entity-row-note">Not saved</span>
-          </span>
-        </button>
         <div
           v-for="testCase in testCases"
           :key="testCase.id"

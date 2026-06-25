@@ -117,6 +117,7 @@ export interface Comparison {
   id: number;
   prompt_id: number | null;
   kind: 'comparison';
+  note: string | null;
   created_at: number;
   evaluations: Evaluation[];
 }
@@ -217,6 +218,8 @@ export const api = {
     ) => apiFetch<Comparison>('/api/comparisons', { method: 'POST', ...json({ prompt_id: promptId, items }) }),
     updateEvaluation: (id: number, data: { note: string | null }) =>
       apiFetch<Evaluation>(`/api/evaluations/${id}`, { method: 'PATCH', ...json(data) }),
+    updateComparison: (id: number, data: { note: string | null }) =>
+      apiFetch<Comparison>(`/api/comparisons/${id}`, { method: 'PATCH', ...json(data) }),
     deleteEvaluation: (id: number) =>
       apiFetch<{ ok: boolean }>(`/api/evaluations/${id}`, { method: 'DELETE' }),
     deleteComparison: (id: number) =>

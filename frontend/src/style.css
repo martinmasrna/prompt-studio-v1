@@ -200,7 +200,7 @@ button {
   align-items: center;
   gap: 8px;
   min-height: 30px;
-  min-width: 176px;
+  min-width: 180px;
   max-width: 280px;
   padding: 4px 9px;
   background: var(--bg);
@@ -209,6 +209,7 @@ button {
   color: var(--text-secondary);
   font: inherit;
   font-size: 12px;
+  font-family: var(--font-mono);
   cursor: pointer;
 }
 
@@ -222,7 +223,6 @@ button {
 .entity-picker:disabled { opacity: 0.55; cursor: default; }
 
 .entity-picker-label {
-  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -231,7 +231,6 @@ button {
 
 .entity-picker-chevron {
   color: var(--text-muted);
-  font-size: 11px;
   line-height: 1;
 }
 
@@ -273,7 +272,6 @@ button {
   border-radius: 5px;
   color: var(--text-secondary);
   font: inherit;
-  font-size: 12px;
   text-align: left;
   cursor: pointer;
 }
@@ -293,7 +291,7 @@ button {
 
 .entity-plus {
   font-family: var(--font-mono);
-  font-size: 15px;
+  font-size: 16px;
   line-height: 1;
 }
 

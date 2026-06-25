@@ -47,19 +47,16 @@ router.post('/run', async (req, res) => {
 
   // Resolve the UI-chosen model id to its server URL + model name.
   const entry = resolveModel(model_id);
-
   if (!entry) {
     res.status(500).json({ error: 'No model configured — add models to backend/config.json (see config.example.json)' });
     return;
   }
-
   const { uri, model } = entry;
 
   const messages: ChatMessage[] = [];
   if (system_prompt?.trim()) messages.push({ role: 'system', content: system_prompt });
   messages.push({ role: 'user', content: user_message });
 
-  // 5-minute abort guard — llama.cpp can be slow on large prompts but shouldn't stall forever
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 2 * 60 * 1000);
   const t0 = Date.now();

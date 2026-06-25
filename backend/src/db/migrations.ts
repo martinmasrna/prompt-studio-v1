@@ -332,6 +332,15 @@ const migrations: Migration[] = [
       }
     },
   },
+  {
+    version: 9,
+    name: 'add_comparison_note',
+    up(db) {
+      if (tableNames(db).includes('evaluation_batches') && !columnNames(db, 'evaluation_batches').includes('note')) {
+        db.exec('ALTER TABLE evaluation_batches ADD COLUMN note TEXT');
+      }
+    },
+  },
 ];
 
 export function runMigrations(db: SQLiteDatabase, migrationList: Migration[] = migrations): void {

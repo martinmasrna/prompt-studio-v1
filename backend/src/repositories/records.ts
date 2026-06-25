@@ -48,6 +48,7 @@ export interface Comparison {
   id: number;
   prompt_id: number | null;
   kind: 'comparison';
+  note: string | null;
   created_at: number;
   evaluations: Evaluation[];
 }
@@ -183,6 +184,20 @@ export function updateEvaluationNote(id: number, note: string | null): Evaluatio
   if (!getEvaluation(id)) return null;
   db.run('UPDATE evaluations SET note = ? WHERE id = ?', [note, id]);
   return getEvaluation(id);
+}
+
+export function updateComparisonNote(id: number, note: string | null): Comparison | null {
+  const batch = db.get('SELECT * FROM evaluation_batches WHERE id = ?', [id]) as unknown as Omit<Comparison, 'evaluations'> | null;
+  if (!batch) return null;
+  db.run('UPDATE evaluation_batches SET note = ? WHERE id = ?', [note, id]);
+  const updated = db.get('SELECT * FROM evaluation_batches WHERE id = ?', [id]) as unknown as Omit<Comparison, 'evaluations'>;
+  return {
+    ...updated,
+    evaluations: (db.all(
+      'SELECT * FROM evaluations WHERE batch_id = ? ORDER BY id',
+      [id]
+    ) as unknown as EvaluationRow[]).map(mapEvaluation),
+  };
 }
 
 export function deleteComparison(id: number): 'deleted' | 'missing' | 'linked' {
