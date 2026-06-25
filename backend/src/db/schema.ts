@@ -55,9 +55,14 @@ export const CONFIGS_SCHEMA_SQL = `
 `;
 
 export const RESULTS_SCHEMA_SQL = `
+  -- Deleting a prompt cascades to its batches and evaluations (and, via
+  -- evaluations, their issues): removing a prompt removes all of its history.
+  -- Deleting a single version or test case while the prompt lives on instead
+  -- nulls those references (ON DELETE SET NULL) so the self-contained snapshot
+  -- columns preserve the evaluation as an immutable record.
   CREATE TABLE evaluation_batches (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    prompt_id  INTEGER REFERENCES prompts(id) ON DELETE SET NULL,
+    prompt_id  INTEGER REFERENCES prompts(id) ON DELETE CASCADE,
     kind       TEXT NOT NULL CHECK (kind IN ('comparison')),
     note       TEXT,
     created_at INTEGER NOT NULL DEFAULT (unixepoch())
@@ -67,7 +72,7 @@ export const RESULTS_SCHEMA_SQL = `
     id                       INTEGER PRIMARY KEY AUTOINCREMENT,
     batch_id                 INTEGER REFERENCES evaluation_batches(id) ON DELETE CASCADE,
     test_case_id             INTEGER REFERENCES test_cases(id) ON DELETE SET NULL,
-    prompt_id                INTEGER REFERENCES prompts(id) ON DELETE SET NULL,
+    prompt_id                INTEGER REFERENCES prompts(id) ON DELETE CASCADE,
     version_id               INTEGER REFERENCES versions(id) ON DELETE SET NULL,
     source                   TEXT NOT NULL CHECK (source IN ('sandbox', 'ab', 'manual')),
     prompt_name_snapshot     TEXT NOT NULL,

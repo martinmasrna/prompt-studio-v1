@@ -375,6 +375,16 @@ prompt carries `is_current = 1`. Deleting a prompt cascades to its versions. See
 - `npm run dev` — backend (`tsx watch`) + frontend (`vite`) together.
 - `npm run build --prefix frontend` / `--prefix backend` — production builds.
 
+**Migrations** — `backend/src/db/migrations.ts` holds an ordered, append-only list
+applied on startup (each in its own transaction; foreign keys are disabled for the
+duration so table rebuilds don't cascade-delete child rows). ⚠️ The backend runs
+under `tsx watch`, so it **re-applies migrations on every save while `npm run dev`
+is running** — pointed at your real `backend/data/prompt-studio.db`. A buggy
+migration draft saved with the dev server up can therefore corrupt or delete real
+data irreversibly. When writing or editing a migration: stop the dev server first,
+or develop it against a throwaway copy of the database, and validate it in
+`backend/test/migrations.test.ts` before letting the watcher near the live file.
+
 **Config** — one git‑ignored file, `backend/config.json` (see
 `config.example.json`): the server `port` plus the model catalog the UI switches
 between (each entry maps a `label`/id to a server `uri` + `model` name).

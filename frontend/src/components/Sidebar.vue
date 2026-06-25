@@ -62,7 +62,7 @@ async function createPrompt() {
 
 // ── Delete a prompt ────────────────────────────────────────────────────────────
 async function deletePrompt(id: number, name: string) {
-  if (!confirm(`Delete "${name}" and all its data? This cannot be undone.`)) return;
+  if (!confirm(`Delete "${name}"? This permanently removes its versions, tests, configs, and all saved results and issues. This cannot be undone.`)) return;
   try {
     await api.prompts.delete(id);
     prompts.value = await api.prompts.list();

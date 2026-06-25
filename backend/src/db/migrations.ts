@@ -400,12 +400,150 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 11,
+    name: 'cascade_prompt_evaluations',
+    // Originally evaluation_batches.prompt_id and evaluations.prompt_id were
+    // ON DELETE SET NULL, so deleting a prompt left its batches/evaluations (and
+    // their issues) behind as orphans that no prompt-scoped query could ever
+    // reach. There is no archived-history UI to justify keeping them, so both
+    // FKs become ON DELETE CASCADE: deleting a prompt now removes all of its
+    // history. version_id / test_case_id stay SET NULL (see schema.ts).
+    //
+    // SQLite can't ALTER a foreign key, so each table is rebuilt: a new table is
+    // created under a temporary name, rows are copied in, the old table is
+    // dropped, and the new one is renamed into place. The rebuild runs with
+    // foreign keys disabled (runMigrations turns them off around the whole loop),
+    // which matters for two reasons: dropping a parent table (evaluation_batches,
+    // then evaluations) would otherwise cascade-delete its children — including
+    // every issue — and the child tables' FK text keeps pointing at the canonical
+    // name, so it resolves to the freshly renamed table. Parents are rebuilt
+    // before children so those references are always valid.
+    up(db) {
+      if (!tableNames(db).includes('evaluations')) return;
+
+      db.exec(`
+        CREATE TABLE evaluation_batches_new (
+          id         INTEGER PRIMARY KEY AUTOINCREMENT,
+          prompt_id  INTEGER REFERENCES prompts(id) ON DELETE CASCADE,
+          kind       TEXT NOT NULL CHECK (kind IN ('comparison')),
+          note       TEXT,
+          created_at INTEGER NOT NULL DEFAULT (unixepoch())
+        );
+        INSERT INTO evaluation_batches_new (id, prompt_id, kind, note, created_at)
+        SELECT id, prompt_id, kind, note, created_at FROM evaluation_batches;
+        DROP TABLE evaluation_batches;
+        ALTER TABLE evaluation_batches_new RENAME TO evaluation_batches;
+
+        CREATE TABLE evaluations_new (
+          id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+          batch_id                 INTEGER REFERENCES evaluation_batches(id) ON DELETE CASCADE,
+          test_case_id             INTEGER REFERENCES test_cases(id) ON DELETE SET NULL,
+          prompt_id                INTEGER REFERENCES prompts(id) ON DELETE CASCADE,
+          version_id               INTEGER REFERENCES versions(id) ON DELETE SET NULL,
+          source                   TEXT NOT NULL CHECK (source IN ('sandbox', 'ab', 'manual')),
+          prompt_name_snapshot     TEXT NOT NULL,
+          test_name_snapshot       TEXT,
+          version_name_snapshot    TEXT NOT NULL,
+          prompt_template_snapshot TEXT NOT NULL,
+          rendered_prompt_snapshot TEXT NOT NULL,
+          variables_json           TEXT NOT NULL CHECK (json_valid(variables_json) AND json_type(variables_json) = 'object'),
+          system_prompt            TEXT NOT NULL DEFAULT '',
+          temperature              REAL NOT NULL CHECK (temperature >= 0 AND temperature <= 2),
+          top_p                    REAL NOT NULL CHECK (top_p >= 0 AND top_p <= 1),
+          top_k                    INTEGER NOT NULL CHECK (top_k >= 1 AND top_k <= 200),
+          max_tokens               INTEGER NOT NULL CHECK (max_tokens >= 64 AND max_tokens <= 32768),
+          enable_thinking          INTEGER NOT NULL CHECK (enable_thinking IN (0, 1)),
+          model_id_snapshot        TEXT NOT NULL,
+          model_label_snapshot     TEXT NOT NULL,
+          upstream_model_snapshot  TEXT NOT NULL,
+          response_text            TEXT,
+          error_text               TEXT,
+          note                     TEXT,
+          tokens_used              INTEGER,
+          latency_ms               INTEGER,
+          executed_at              INTEGER NOT NULL,
+          created_at               INTEGER NOT NULL DEFAULT (unixepoch())
+        );
+        INSERT INTO evaluations_new (
+          id, batch_id, test_case_id, prompt_id, version_id, source,
+          prompt_name_snapshot, test_name_snapshot, version_name_snapshot,
+          prompt_template_snapshot, rendered_prompt_snapshot, variables_json,
+          system_prompt, temperature, top_p, top_k, max_tokens, enable_thinking,
+          model_id_snapshot, model_label_snapshot, upstream_model_snapshot,
+          response_text, error_text, note, tokens_used, latency_ms,
+          executed_at, created_at
+        )
+        SELECT
+          id, batch_id, test_case_id, prompt_id, version_id, source,
+          prompt_name_snapshot, test_name_snapshot, version_name_snapshot,
+          prompt_template_snapshot, rendered_prompt_snapshot, variables_json,
+          system_prompt, temperature, top_p, top_k, max_tokens, enable_thinking,
+          model_id_snapshot, model_label_snapshot, upstream_model_snapshot,
+          response_text, error_text, note, tokens_used, latency_ms,
+          executed_at, created_at
+        FROM evaluations;
+        DROP TABLE evaluations;
+        ALTER TABLE evaluations_new RENAME TO evaluations;
+
+        CREATE INDEX idx_evaluation_batches_prompt ON evaluation_batches(prompt_id, created_at DESC);
+        CREATE INDEX idx_evaluations_prompt ON evaluations(prompt_id, executed_at DESC);
+        CREATE INDEX idx_evaluations_batch ON evaluations(batch_id);
+      `);
+    },
+  },
+  {
+    version: 12,
+    name: 'repair_issues_evaluation_fk',
+    // Repairs databases damaged by an early, buggy build of migration 11. That
+    // build rebuilt evaluations with `ALTER TABLE evaluations RENAME TO
+    // evaluations_old`; because this SQLite build ignores legacy_alter_table and
+    // foreign keys were still enabled, the rename rewrote issues.evaluation_id to
+    // reference "evaluations_old" and dropping that table cascade-deleted every
+    // issue. Survivors are left with a foreign key pointing at a table that no
+    // longer exists, so new issues can't be inserted. This rebuilds issues with
+    // the correct reference. It's a no-op on healthy databases (issues already
+    // references evaluations), and preserves any rows that are present.
+    up(db) {
+      if (!tableNames(db).includes('issues')) return;
+
+      const fkList = db.all('PRAGMA foreign_key_list(issues)') as unknown as Array<{ from: string; table: string }>;
+      const evaluationFk = fkList.find(fk => fk.from === 'evaluation_id');
+      if (!evaluationFk || evaluationFk.table === 'evaluations') return;
+
+      db.exec(`
+        CREATE TABLE issues_new (
+          evaluation_id       INTEGER PRIMARY KEY REFERENCES evaluations(id) ON DELETE CASCADE,
+          title               TEXT NOT NULL,
+          status              TEXT NOT NULL DEFAULT 'open'
+                              CHECK (status IN ('open', 'diagnosed', 'closed')),
+          note                TEXT,
+          resolution_note     TEXT,
+          resolved_version_id INTEGER REFERENCES versions(id) ON DELETE SET NULL,
+          created_at          INTEGER NOT NULL DEFAULT (unixepoch()),
+          updated_at          INTEGER NOT NULL DEFAULT (unixepoch())
+        );
+        INSERT INTO issues_new (
+          evaluation_id, title, status, note,
+          resolution_note, resolved_version_id, created_at, updated_at
+        )
+        SELECT
+          evaluation_id, title, status, note,
+          resolution_note, resolved_version_id, created_at, updated_at
+        FROM issues;
+        DROP TABLE issues;
+        ALTER TABLE issues_new RENAME TO issues;
+
+        CREATE INDEX idx_issues_status_created ON issues(status, created_at DESC);
+        CREATE INDEX idx_issues_resolved_version ON issues(resolved_version_id);
+      `);
+    },
+  },
 ];
 
 export function runMigrations(db: SQLiteDatabase, migrationList: Migration[] = migrations): void {
   db.exec(`
     PRAGMA journal_mode = WAL;
-    PRAGMA foreign_keys = ON;
 
     CREATE TABLE IF NOT EXISTS schema_migrations (
       version    INTEGER PRIMARY KEY,
@@ -419,20 +557,30 @@ export function runMigrations(db: SQLiteDatabase, migrationList: Migration[] = m
       .map(row => row.version)
   );
 
-  for (const migration of migrationList) {
-    if (applied.has(migration.version)) continue;
+  // Foreign keys stay disabled for the duration of the loop so that migrations
+  // which rebuild a table (drop the old one, recreate it, copy rows back) don't
+  // trip ON DELETE CASCADE on child rows mid-rebuild. SQLite only honors this
+  // pragma outside a transaction, so it must wrap the loop rather than live
+  // inside any single migration's transaction. Re-enabled in the finally block.
+  db.exec('PRAGMA foreign_keys = OFF');
+  try {
+    for (const migration of migrationList) {
+      if (applied.has(migration.version)) continue;
 
-    db.run('BEGIN IMMEDIATE');
-    try {
-      migration.up(db);
-      db.run(
-        'INSERT INTO schema_migrations (version, name) VALUES (?, ?)',
-        [migration.version, migration.name]
-      );
-      db.run('COMMIT');
-    } catch (error) {
-      db.run('ROLLBACK');
-      throw new Error(`Migration ${migration.version} (${migration.name}) failed`, { cause: error });
+      db.run('BEGIN IMMEDIATE');
+      try {
+        migration.up(db);
+        db.run(
+          'INSERT INTO schema_migrations (version, name) VALUES (?, ?)',
+          [migration.version, migration.name]
+        );
+        db.run('COMMIT');
+      } catch (error) {
+        db.run('ROLLBACK');
+        throw new Error(`Migration ${migration.version} (${migration.name}) failed`, { cause: error });
+      }
     }
+  } finally {
+    db.exec('PRAGMA foreign_keys = ON');
   }
 }

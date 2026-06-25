@@ -125,7 +125,7 @@ issues (
 - [ ] Add deterministic assertions and automatic checks.
 - [ ] Add configurable LLM-as-judge assessments.
 - [ ] Add score aggregation and version/model comparisons.
-- [ ] Add default history-preserving deletion plus an explicit cascade-history deletion flow.
+- [x] Make prompt deletion cascade to its evaluations, batches, and issues (no orphaned history).
 
 ## Open questions
 
