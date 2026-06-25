@@ -44,6 +44,7 @@ const isDirty = computed(() =>
 // the heavier management (rename, notes, delete) and "Save as new version".
 const versionsOpen = ref(false);
 const versionActionMenuId = ref<number | null>(null);
+const activeVersionMenuOpen = ref(false);
 
 const activeVersion = computed(() => (
   versions.value.find(v => v.id === activeVersionId.value) ?? versions.value[0] ?? null
@@ -54,10 +55,38 @@ function openNewVersionWizard() {
   showSaveModal.value = true;
   versionsOpen.value = false;
   versionActionMenuId.value = null;
+  activeVersionMenuOpen.value = false;
 }
 
 function toggleVersionActions(versionId: number) {
   versionActionMenuId.value = versionActionMenuId.value === versionId ? null : versionId;
+  activeVersionMenuOpen.value = false;
+}
+
+function toggleActiveVersionActions() {
+  activeVersionMenuOpen.value = !activeVersionMenuOpen.value;
+  versionsOpen.value = false;
+  versionActionMenuId.value = null;
+}
+
+function renameActiveVersion() {
+  if (!activeVersion.value) return;
+  activeVersionMenuOpen.value = false;
+  startRename(activeVersion.value.id, activeVersion.value.name);
+  versionsOpen.value = true;
+}
+
+function editActiveVersionDescription() {
+  if (!activeVersion.value) return;
+  activeVersionMenuOpen.value = false;
+  startEditDescription(activeVersion.value.id, activeVersion.value.note);
+  versionsOpen.value = true;
+}
+
+function deleteActiveVersion() {
+  if (!activeVersion.value) return;
+  activeVersionMenuOpen.value = false;
+  void deleteVersion(activeVersion.value.id, activeVersion.value.name);
 }
 
 function startRename(versionId: number, name: string) {
@@ -99,6 +128,7 @@ async function selectVersion(versionId: number) {
   if (versionId === activeVersionId.value) {
     versionsOpen.value = false;
     versionActionMenuId.value = null;
+    activeVersionMenuOpen.value = false;
     return;
   }
   const v = versions.value.find(v => v.id === versionId);
@@ -113,6 +143,7 @@ async function selectVersion(versionId: number) {
   for (const item of versions.value) item.is_current = item.id === versionId ? 1 : 0;
   versionsOpen.value = false;
   versionActionMenuId.value = null;
+  activeVersionMenuOpen.value = false;
 }
 
 // Inline name editing
@@ -205,31 +236,30 @@ async function deleteVersion(versionId: number, name: string) {
           Unsaved
         </span>
 
-        <div class="versions-menu">
-          <button
-            class="workspace-switcher"
+        <div class="entity-controls version-controls">
+          <div class="entity-picker-wrap versions-menu">
+            <button
+            class="entity-picker version-picker"
             :class="{ open: versionsOpen }"
             aria-haspopup="menu"
             :aria-expanded="versionsOpen"
-            @click="versionsOpen = !versionsOpen"
+            @click="versionsOpen = !versionsOpen; activeVersionMenuOpen = false"
           >
-            <span class="workspace-switcher-label">
+            <span class="entity-picker-label">
               {{ activeVersion?.name ?? 'No version' }}{{ activeVersion?.is_current ? ' · current' : '' }}
             </span>
-            <svg class="chevron" width="10" height="10" viewBox="0 0 12 12" fill="none">
-              <path d="M2 4.5L6 8.5L10 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </button>
+            <span class="entity-picker-chevron">{{ versionsOpen ? '^' : 'v' }}</span>
+            </button>
 
-          <div
+            <div
             v-if="versionsOpen"
-            class="popover-backdrop"
+            class="entity-backdrop"
             @click="versionsOpen = false; versionActionMenuId = null"
-          />
+            />
 
-          <div v-if="versionsOpen" class="versions-popover" role="menu">
-            <button class="new-version-row" role="menuitem" @click="openNewVersionWizard">
-              <span class="new-version-plus">+</span>
+            <div v-if="versionsOpen" class="entity-popover version-popover" role="menu">
+            <button class="entity-new-row" role="menuitem" @click="openNewVersionWizard">
+              <span class="entity-plus">+</span>
               <span>New version</span>
             </button>
 
@@ -237,14 +267,15 @@ async function deleteVersion(versionId: number, name: string) {
               <div
                 v-for="v in versions"
                 :key="v.id"
-                class="version-row"
+                class="entity-row"
                 :class="{ current: v.id === activeVersionId }"
+                role="menuitem"
                 @click="selectVersion(v.id)"
               >
-                <div class="ver-main">
+                <span class="entity-row-main">
                   <span
                     v-if="editingNameId !== v.id"
-                    class="ver-label"
+                    class="entity-row-title"
                   >{{ v.name }}</span>
                   <input
                     v-else
@@ -259,7 +290,7 @@ async function deleteVersion(versionId: number, name: string) {
 
                   <span
                     v-if="editingNoteId !== v.id"
-                    class="ver-note"
+                    class="entity-row-note"
                   >
                     {{ v.note || 'No description' }}
                   </span>
@@ -273,11 +304,12 @@ async function deleteVersion(versionId: number, name: string) {
                     @click.stop
                     autofocus
                   />
-                </div>
+                </span>
 
-                <div class="version-actions">
+                <span class="entity-row-actions">
                   <button
-                    class="ver-kebab"
+                    class="entity-kebab"
+                    type="button"
                     aria-label="Version actions"
                     aria-haspopup="menu"
                     :aria-expanded="versionActionMenuId === v.id"
@@ -285,8 +317,8 @@ async function deleteVersion(versionId: number, name: string) {
                   >⋮</button>
 
                   <template v-if="versionActionMenuId === v.id">
-                    <div class="action-backdrop" @click.stop="versionActionMenuId = null" />
-                    <div class="action-menu" role="menu" @click.stop>
+                    <div class="entity-backdrop" @click.stop="versionActionMenuId = null" />
+                    <div class="entity-menu" role="menu" @click.stop>
                       <button role="menuitem" @click="startRename(v.id, v.name)">Rename</button>
                       <button role="menuitem" @click="startEditDescription(v.id, v.note)">Edit description</button>
                       <button
@@ -298,12 +330,42 @@ async function deleteVersion(versionId: number, name: string) {
                       >Delete</button>
                     </div>
                   </template>
-                </div>
+                </span>
               </div>
             </div>
+            </div>
+          </div>
+
+          <div class="entity-menu-wrap" @keydown.esc="activeVersionMenuOpen = false">
+            <button
+              class="entity-kebab"
+              type="button"
+              aria-label="Current version actions"
+              aria-haspopup="menu"
+              :aria-expanded="activeVersionMenuOpen"
+              :disabled="!activeVersion"
+              @click="toggleActiveVersionActions"
+            >
+              <span>&#8942;</span>
+            </button>
+
+            <template v-if="activeVersionMenuOpen">
+              <div class="entity-backdrop" @click="activeVersionMenuOpen = false" />
+              <div class="entity-menu" role="menu">
+                <button role="menuitem" @click="renameActiveVersion">Rename</button>
+                <button role="menuitem" @click="editActiveVersionDescription">Edit description</button>
+                <button
+                  role="menuitem"
+                  class="danger"
+                  :disabled="versions.length <= 1"
+                  :title="versions.length <= 1 ? 'A prompt must keep at least one version' : 'Delete version'"
+                  @click="deleteActiveVersion"
+                >Delete</button>
+              </div>
+            </template>
+          </div>
         </div>
       </div>
-    </div>
     </div>
 
     <!-- System prompt — part of the version, saved alongside the prompt text -->
@@ -422,98 +484,23 @@ async function deleteVersion(versionId: number, name: string) {
 .unsaved-dot { color: #c79a3a; font-size: 11px; font-family: var(--font-mono); white-space: nowrap; }
 
 /* ── Version switcher ── */
-.version-switcher {
-  display: inline-flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--text-secondary);
-  font-family: var(--font-mono);
-  font-size: 12.5px;
-  min-height: 34px;
+.version-controls { align-items: center; }
+
+.version-picker {
   width: 280px;
   max-width: min(36vw, 320px);
-  padding: 6px 11px;
-  cursor: pointer;
-  transition: color 0.12s, border-color 0.12s;
-}
-.version-switcher:hover,
-.version-switcher.open,
-.version-switcher:focus { outline: none; color: var(--text-primary); border-color: #aaa; }
-.version-switcher-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.version-switcher .chevron { flex: 0 0 auto; transition: transform 0.15s; }
-.version-switcher.open .chevron { transform: rotate(180deg); }
-
-.versions-menu { position: relative; }
-
-/* Transparent catcher so a click anywhere outside closes the popover. */
-.popover-backdrop { position: fixed; inset: 0; z-index: 50; }
-
-.versions-popover {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  z-index: 51;
-  width: min(380px, calc(100vw - 32px));
-  max-height: 60vh;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 6px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
-}
-
-.new-version-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
   min-height: 34px;
-  background: none;
-  border: none;
-  border-radius: 5px;
-  color: var(--text-secondary);
-  font-size: 12px;
-  font-family: inherit;
-  padding: 7px 10px;
-  cursor: pointer;
-  text-align: left;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  padding: 6px 11px;
 }
-.new-version-row:hover { background: var(--bg-hover); color: var(--text-primary); }
-.new-version-plus { font-family: var(--font-mono); font-size: 15px; line-height: 1; }
+
+.version-popover {
+  width: min(380px, calc(100vw - 32px));
+  gap: 4px;
+}
 
 .version-list { display: flex; flex-direction: column; gap: 2px; }
-
-.version-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  align-items: start;
-  gap: 8px;
-  min-height: 44px;
-  padding: 7px 6px 7px 10px;
-  border-radius: 5px;
-  cursor: pointer;
-  transition: background 0.1s;
-}
-.version-row:hover { background: var(--bg-hover); }
-.version-row.current { background: var(--bg-selected); }
-
-.ver-main {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.ver-label { font-size: 12px; font-weight: 600; color: var(--text-secondary); font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.version-row.current .ver-label { color: var(--text-white); }
 
 .ver-label-input {
   background: none;
@@ -527,13 +514,6 @@ async function deleteVersion(versionId: number, name: string) {
 }
 .ver-label-input:focus { outline: none; }
 
-.ver-note {
-  font-size: 12px;
-  color: var(--text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .ver-note-input {
   background: none;
   border: none;
@@ -544,62 +524,6 @@ async function deleteVersion(versionId: number, name: string) {
   width: 100%;
 }
 .ver-note-input:focus { outline: none; }
-
-.ver-current {
-  align-self: center;
-  color: var(--text-muted);
-  font-size: 10px;
-  font-family: var(--font-mono);
-  text-transform: uppercase;
-}
-
-.version-actions { position: relative; align-self: center; }
-
-.ver-kebab {
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  border: none;
-  border-radius: 5px;
-  background: none;
-  color: var(--text-muted);
-  font-size: 16px;
-  line-height: 1;
-  cursor: pointer;
-}
-.ver-kebab:hover,
-.ver-kebab[aria-expanded="true"] { background: var(--bg-hover); color: var(--text-primary); }
-
-.action-backdrop { position: fixed; inset: 0; z-index: 52; }
-.action-menu {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
-  z-index: 53;
-  min-width: 150px;
-  padding: 4px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--bg);
-  box-shadow: 0 8px 24px rgba(0,0,0,.14);
-  display: flex;
-  flex-direction: column;
-}
-.action-menu button {
-  padding: 7px 10px;
-  border: none;
-  border-radius: 5px;
-  background: none;
-  color: var(--text-secondary);
-  font: inherit;
-  font-size: 12px;
-  text-align: left;
-  cursor: pointer;
-}
-.action-menu button:hover:not(:disabled) { background: var(--bg-selected); color: var(--text-primary); }
-.action-menu button.danger { color: #b33; }
-.action-menu button.danger:hover:not(:disabled) { background: #fdeaea; }
-.action-menu button:disabled { opacity: 0.4; cursor: not-allowed; }
 
 /* ── Action bar ── */
 /* Pinned to the bottom of the non-scrolling panel. */
@@ -642,7 +566,7 @@ async function deleteVersion(versionId: number, name: string) {
     justify-content: space-between;
   }
 
-  .version-switcher {
+  .version-picker {
     width: min(320px, 100%);
     max-width: none;
   }

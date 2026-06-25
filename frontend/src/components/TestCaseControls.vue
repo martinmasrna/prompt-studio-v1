@@ -1,8 +1,10 @@
 <script setup lang="ts">
+import { computed, ref } from 'vue';
 import {
   testCases, selectedTestCaseId, selectedTestCase, isTestDirty,
   testsLoading, testSaving, testsError, selectTestCase,
-  saveNewTest, saveSelectedTest, deleteSelectedTest,
+  saveNewTest, saveSelectedTest, renameSelectedTest,
+  renameTestCase, deleteSelectedTest, deleteTestCase,
 } from '../store/testCases';
 
 withDefaults(defineProps<{ showActions?: boolean; variant?: 'inline' | 'header'; compact?: boolean }>(), {
@@ -11,6 +13,12 @@ withDefaults(defineProps<{ showActions?: boolean; variant?: 'inline' | 'header';
   compact: false,
 });
 
+const selectorOpen = ref(false);
+const menuOpen = ref(false);
+const rowMenuId = ref<number | null>(null);
+
+const compactLabel = computed(() => selectedTestCase.value?.name ?? 'Scratch (not saved)');
+
 function choose(event: Event) {
   const select = event.target as HTMLSelectElement;
   const previous = selectedTestCaseId.value;
@@ -18,14 +26,55 @@ function choose(event: Event) {
   if (!selectTestCase(next)) select.value = previous?.toString() ?? '';
 }
 
+function chooseId(id: number | null): void {
+  if (selectTestCase(id)) {
+    selectorOpen.value = false;
+    menuOpen.value = false;
+    rowMenuId.value = null;
+  }
+}
+
 async function saveAsNew() {
-  const name = prompt('Name this test');
+  const name = prompt('Name this scenario');
   if (!name?.trim()) return;
   try {
     await saveNewTest(name);
   } catch {
     // The shared error message is rendered below.
   }
+}
+
+async function rename() {
+  const selected = selectedTestCase.value;
+  if (!selected) return;
+  const name = prompt('Rename scenario', selected.name);
+  if (!name?.trim()) return;
+  try {
+    await renameSelectedTest(name);
+  } catch {
+    // The shared error message is rendered below.
+  }
+}
+
+async function renameRow(id: number, currentName: string) {
+  rowMenuId.value = null;
+  const name = prompt('Rename scenario', currentName);
+  if (!name?.trim()) return;
+  try {
+    await renameTestCase(id, name);
+  } catch {
+    // The shared error message is rendered below.
+  }
+}
+
+async function menuSaveAsNew() {
+  selectorOpen.value = false;
+  await saveAsNew();
+}
+
+async function menuRename() {
+  menuOpen.value = false;
+  await rename();
 }
 
 async function save() {
@@ -45,31 +94,114 @@ async function remove() {
     alert(error instanceof Error ? error.message : 'Could not delete test');
   }
 }
+
+async function removeRow(id: number, name: string) {
+  rowMenuId.value = null;
+  if (!confirm(`Delete saved test "${name}"?`)) return;
+  try {
+    await deleteTestCase(id);
+  } catch (error) {
+    alert(error instanceof Error ? error.message : 'Could not delete test');
+  }
+}
+
+async function menuRemove() {
+  menuOpen.value = false;
+  await remove();
+}
 </script>
 
 <template>
   <!-- Compact corner control: just the selector plus icon actions, for a box header -->
-  <div v-if="compact" class="cc-compact">
-    <select class="cc-select" aria-label="Saved test" :value="selectedTestCaseId ?? ''" :disabled="testsLoading" @change="choose">
-      <option value="">Scratch (not saved)</option>
-      <option v-for="testCase in testCases" :key="testCase.id" :value="testCase.id">{{ testCase.name }}</option>
-    </select>
-    <span v-if="selectedTestCase && isTestDirty" class="cc-dot" title="Unsaved changes" />
-    <button class="cc-icon" title="Save test" :disabled="!selectedTestCase || testSaving || !isTestDirty" @click="save">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/>
-      </svg>
+  <div v-if="compact" class="entity-controls compact-control">
+    <div class="entity-picker-wrap">
+      <button
+        class="entity-picker compact-picker"
+        :class="{ open: selectorOpen }"
+        type="button"
+        aria-haspopup="menu"
+        :aria-expanded="selectorOpen"
+        :disabled="testsLoading"
+        @click="selectorOpen = !selectorOpen; menuOpen = false; rowMenuId = null"
+      >
+        <span class="entity-picker-label">{{ compactLabel }}</span>
+        <span class="entity-picker-chevron">{{ selectorOpen ? '^' : 'v' }}</span>
+      </button>
+      <div v-if="selectorOpen" class="entity-backdrop" @click="selectorOpen = false; rowMenuId = null" />
+      <div v-if="selectorOpen" class="entity-popover compact-popover" role="menu">
+        <button class="entity-new-row" role="menuitem" :disabled="testSaving" @click="menuSaveAsNew">
+          <span class="entity-plus">+</span>
+          <span>New scenario</span>
+        </button>
+        <button
+          class="entity-row"
+          :class="{ current: selectedTestCaseId === null }"
+          role="menuitem"
+          @click="chooseId(null)"
+        >
+          <span class="entity-row-main">
+            <span class="entity-row-title">Scratch</span>
+            <span class="entity-row-note">Not saved</span>
+          </span>
+        </button>
+        <div
+          v-for="testCase in testCases"
+          :key="testCase.id"
+          class="entity-row"
+          :class="{ current: selectedTestCaseId === testCase.id }"
+          role="menuitem"
+          @click="chooseId(testCase.id)"
+        >
+          <span class="entity-row-main">
+            <span class="entity-row-title">{{ testCase.name }}</span>
+            <span class="entity-row-note">{{ testCase.description || 'No description' }}</span>
+          </span>
+          <span class="entity-row-actions">
+            <button
+              class="entity-kebab"
+              type="button"
+              aria-label="Scenario actions"
+              :aria-expanded="rowMenuId === testCase.id"
+              @click.stop="rowMenuId = rowMenuId === testCase.id ? null : testCase.id"
+            >
+              <span>&#8942;</span>
+            </button>
+            <template v-if="rowMenuId === testCase.id">
+              <div class="entity-backdrop" @click.stop="rowMenuId = null" />
+              <div class="entity-menu" role="menu" @click.stop>
+                <button role="menuitem" :disabled="testSaving" @click="renameRow(testCase.id, testCase.name)">Rename</button>
+                <button role="menuitem" class="danger" :disabled="testSaving" @click="removeRow(testCase.id, testCase.name)">Delete</button>
+              </div>
+            </template>
+          </span>
+        </div>
+      </div>
+    </div>
+    <span v-if="selectedTestCase && isTestDirty" class="entity-dirty-dot" title="Unsaved changes" />
+    <button
+      v-if="selectedTestCase"
+      class="entity-save"
+      :disabled="testSaving || !isTestDirty"
+      @click="save"
+    >
+      {{ testSaving ? 'Saving...' : 'Save' }}
     </button>
-    <button class="cc-icon" title="Save as new test" :disabled="testSaving" @click="saveAsNew">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M12 18v-6"/><path d="M9 15h6"/>
-      </svg>
-    </button>
-    <button v-if="selectedTestCase" class="cc-icon danger" title="Delete test" :disabled="testSaving" @click="remove">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
-      </svg>
-    </button>
+    <div class="entity-menu-wrap" @keydown.esc="menuOpen = false">
+      <button
+        class="entity-kebab"
+        type="button"
+        aria-label="Test actions"
+        :aria-expanded="menuOpen"
+        @click="menuOpen = !menuOpen; selectorOpen = false; rowMenuId = null"
+      >
+        <span>&#8942;</span>
+      </button>
+      <div v-if="menuOpen" class="entity-menu" role="menu">
+        <button v-if="selectedTestCase" role="menuitem" :disabled="testSaving" @click="menuRename">Rename</button>
+        <button v-if="selectedTestCase" role="menuitem" class="danger" :disabled="testSaving" @click="menuRemove">Delete</button>
+        <button v-if="!selectedTestCase" role="menuitem" disabled>No saved scenario selected</button>
+      </div>
+    </div>
     <p v-if="testsError" class="cc-error">{{ testsError }}</p>
   </div>
 
@@ -117,7 +249,7 @@ async function remove() {
     <button v-if="selectedTestCase" class="test-btn primary" :disabled="testSaving || !isTestDirty" @click="save">
       {{ testSaving ? 'Saving…' : 'Save' }}
     </button>
-    <button class="test-btn" :disabled="testSaving" @click="saveAsNew">Save as new</button>
+    <button class="test-btn" :disabled="testSaving" @click="saveAsNew">New scenario</button>
 
     <template v-if="selectedTestCase">
       <span class="divider" />
@@ -140,15 +272,6 @@ async function remove() {
 </template>
 
 <style scoped>
-/* Compact corner control (box headers) */
-.cc-compact { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
-.cc-select { min-width: 130px; max-width: 220px; min-height: 30px; background: var(--bg); border: 1px solid var(--border); border-radius: 5px; color: var(--text-secondary); font: inherit; font-size: 12px; padding: 4px 8px; }
-.cc-select:focus { outline: none; border-color: #aaa; }
-.cc-dot { width: 6px; height: 6px; border-radius: 50%; background: #d6a13a; flex-shrink: 0; }
-.cc-icon { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; padding: 0; background: none; border: none; border-radius: 5px; color: var(--text-muted); cursor: pointer; transition: color .12s, background .12s; }
-.cc-icon:hover:not(:disabled) { color: var(--text-primary); background: var(--bg-hover); }
-.cc-icon.danger:hover:not(:disabled) { color: #b33; background: #fff5f5; }
-.cc-icon:disabled { opacity: 0.4; cursor: default; }
 .cc-error { color: #c04040; font-size: 11px; width: 100%; text-align: right; margin: 2px 0 0; }
 
 .test-controls { display: flex; align-items: center; gap: 8px; min-width: 0; flex-wrap: wrap; }

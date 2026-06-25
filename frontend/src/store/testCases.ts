@@ -28,6 +28,15 @@ function scenarioSnapshot(testCase?: TestCase): string {
   return JSON.stringify(currentScenario(selected?.name ?? '', selected?.description ?? null));
 }
 
+function updateSavedSnapshotName(name: string): void {
+  try {
+    const snapshot = JSON.parse(savedSnapshot) as TestCaseInput;
+    savedSnapshot = JSON.stringify({ ...snapshot, name });
+  } catch {
+    savedSnapshot = scenarioSnapshot();
+  }
+}
+
 function resetScenario(): void {
   selectedTestCaseId.value = null;
   variableValues.value = {};
@@ -119,10 +128,40 @@ export async function saveSelectedTest(): Promise<void> {
   }
 }
 
+export async function renameTestCase(id: number, name: string): Promise<void> {
+  const selected = testCases.value.find(item => item.id === id);
+  const trimmed = name.trim();
+  if (!selected || !trimmed || trimmed === selected.name) return;
+  testSaving.value = true;
+  testsError.value = null;
+  try {
+    const updated = await api.testCases.update(selected.id, { name: trimmed });
+    const next = testCases.value.map(item => item.id === updated.id ? updated : item)
+      .sort((a, b) => a.name.localeCompare(b.name));
+    testCases.value = next;
+    if (selectedTestCaseId.value === updated.id) updateSavedSnapshotName(updated.name);
+  } catch (error) {
+    testsError.value = error instanceof Error ? error.message : 'Could not rename test';
+    throw error;
+  } finally {
+    testSaving.value = false;
+  }
+}
+
+export async function renameSelectedTest(name: string): Promise<void> {
+  const selected = selectedTestCase.value;
+  if (!selected) return;
+  await renameTestCase(selected.id, name);
+}
+
+export async function deleteTestCase(id: number): Promise<void> {
+  await api.testCases.delete(id);
+  testCases.value = testCases.value.filter(item => item.id !== id);
+  if (selectedTestCaseId.value === id) resetScenario();
+}
+
 export async function deleteSelectedTest(): Promise<void> {
   const selected = selectedTestCase.value;
   if (!selected) return;
-  await api.testCases.delete(selected.id);
-  testCases.value = testCases.value.filter(item => item.id !== selected.id);
-  resetScenario();
+  await deleteTestCase(selected.id);
 }

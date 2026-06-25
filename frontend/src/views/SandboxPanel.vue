@@ -199,10 +199,10 @@ const renderedOutput = computed(() =>
 .panel-box {
   display: flex;
   flex-direction: column;
+  flex-shrink: 0;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--bg);
-  overflow: hidden;
 }
 
 .box-header {
@@ -213,6 +213,7 @@ const renderedOutput = computed(() =>
   flex-wrap: wrap;
   padding: 12px 16px;
   border-bottom: 1px solid var(--border);
+  border-radius: 7px 7px 0 0;
   background: var(--bg-sunken);
 }
 

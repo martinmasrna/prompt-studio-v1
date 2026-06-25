@@ -36,6 +36,15 @@ function snapshot(config?: Config): string {
   return JSON.stringify(currentValues(selected?.name ?? ''));
 }
 
+function updateSavedSnapshotName(name: string): void {
+  try {
+    const saved = JSON.parse(savedSnapshot) as ConfigInput;
+    savedSnapshot = JSON.stringify({ ...saved, name });
+  } catch {
+    savedSnapshot = snapshot();
+  }
+}
+
 function applyParams(config: Config): void {
   temperature.value = config.temperature;
   topP.value = config.top_p;
@@ -143,10 +152,39 @@ export async function saveSelectedConfig(): Promise<void> {
   }
 }
 
+export async function renameConfig(id: number, name: string): Promise<void> {
+  const selected = configs.value.find(item => item.id === id);
+  const trimmed = name.trim();
+  if (!selected || !trimmed || trimmed === selected.name) return;
+  configSaving.value = true;
+  configsError.value = null;
+  try {
+    const updated = await api.configs.update(selected.id, { name: trimmed });
+    configs.value = configs.value.map(item => item.id === updated.id ? updated : item)
+      .sort((a, b) => a.name.localeCompare(b.name));
+    if (selectedConfigId.value === updated.id) updateSavedSnapshotName(updated.name);
+  } catch (error) {
+    configsError.value = error instanceof Error ? error.message : 'Could not rename config';
+    throw error;
+  } finally {
+    configSaving.value = false;
+  }
+}
+
+export async function renameSelectedConfig(name: string): Promise<void> {
+  const selected = selectedConfig.value;
+  if (!selected) return;
+  await renameConfig(selected.id, name);
+}
+
+export async function deleteConfig(id: number): Promise<void> {
+  await api.configs.delete(id);
+  configs.value = configs.value.filter(item => item.id !== id);
+  if (selectedConfigId.value === id) resetParams();
+}
+
 export async function deleteSelectedConfig(): Promise<void> {
   const selected = selectedConfig.value;
   if (!selected) return;
-  await api.configs.delete(selected.id);
-  configs.value = configs.value.filter(item => item.id !== selected.id);
-  resetParams();
+  await deleteConfig(selected.id);
 }
