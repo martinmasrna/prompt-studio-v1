@@ -39,7 +39,15 @@
       "Bash(node -e ' *)",
       "Bash(node \"C:/Users/masrna/AppData/Local/Temp/claude/C--Users-masrna-Projects-Prompt-Studio/c6dca5d5-ae7d-451d-b117-ed81aabdd1fc/scratchpad/inspect.js\")",
       "Bash(cp prompt-studio.db prompt-studio.db.bak-__TRACKED_VAR__)",
-      "Bash(cp prompt-studio.db \"C:/Users/masrna/AppData/Local/Temp/claude/C--Users-masrna-Projects-Prompt-Studio/c6dca5d5-ae7d-451d-b117-ed81aabdd1fc/scratchpad/probe.db\")"
+      "Bash(cp prompt-studio.db \"C:/Users/masrna/AppData/Local/Temp/claude/C--Users-masrna-Projects-Prompt-Studio/c6dca5d5-ae7d-451d-b117-ed81aabdd1fc/scratchpad/probe.db\")",
+      "Bash(npx vue-tsc *)",
+      "Bash(node repro.mjs)",
+      "Bash(ls -la data/)",
+      "Bash(ls -la data/*.db*)",
+      "Bash(node inspect.mjs)",
+      "Bash(cp data/prompt-studio.db \"data/prompt-studio.db.bak-investigation\")",
+      "Bash(node -e \"const p=require\\('./package.json'\\); console.log\\(JSON.stringify\\(p.scripts,null,2\\)\\)\")",
+      "Bash(node recover.mjs)"
     ]
   }
 }

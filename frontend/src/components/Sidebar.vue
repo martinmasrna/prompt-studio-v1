@@ -7,6 +7,7 @@ import { useAppState } from '../store/app';
 import { activeModule, type ModuleTab } from '../store/editor';
 import { hrefFor } from '../store/router';
 import { showSettings, activeModelLabel } from '../store/settings';
+import BaseModal from './BaseModal.vue';
 
 const { prompts, selectedPromptId } = useAppState();
 
@@ -184,29 +185,25 @@ async function deletePrompt(id: number, name: string) {
   </aside>
 
   <!-- New-prompt dialog -->
-  <Teleport to="body">
-    <div v-if="showNewModal" class="overlay" @click.self="showNewModal = false">
-      <div class="modal">
-        <h2 class="modal-title">New prompt</h2>
+  <BaseModal v-if="showNewModal" @close="showNewModal = false">
+    <template #title>New prompt</template>
 
-        <input
-          v-model="newName"
-          class="modal-input"
-          placeholder="Prompt name"
-          @keydown.enter="createPrompt"
-          @keydown.esc="showNewModal = false"
-          autofocus
-        />
+    <input
+      v-model="newName"
+      class="modal-input"
+      placeholder="Prompt name"
+      @keydown.enter="createPrompt"
+      @keydown.esc="showNewModal = false"
+      autofocus
+    />
 
-        <div class="modal-actions">
-          <button class="btn-ghost" @click="showNewModal = false">Cancel</button>
-          <button class="btn-primary" :disabled="creating || !newName.trim()" @click="createPrompt">
-            {{ creating ? 'Creating…' : 'Create' }}
-          </button>
-        </div>
-      </div>
-    </div>
-  </Teleport>
+    <template #actions>
+      <button class="btn-ghost" @click="showNewModal = false">Cancel</button>
+      <button class="btn-primary" :disabled="creating || !newName.trim()" @click="createPrompt">
+        {{ creating ? 'Creating…' : 'Create' }}
+      </button>
+    </template>
+  </BaseModal>
 </template>
 
 <style scoped>
@@ -468,4 +465,16 @@ async function deletePrompt(id: number, name: string) {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+.modal-input {
+  width: 100%;
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 13px;
+  padding: 8px 10px;
+}
+.modal-input:focus { outline: none; border-color: #aaa; }
 </style>

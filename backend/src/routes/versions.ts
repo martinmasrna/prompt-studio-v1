@@ -6,6 +6,7 @@
 import { Router } from 'express';
 import db from '../db';
 import { configBelongsToPrompt } from '../repositories/configs';
+import { setCurrentVersion, deleteVersion } from '../repositories/versions';
 
 const router = Router();
 
@@ -29,17 +30,7 @@ router.patch('/:id', (req, res) => {
     return;
   }
 
-  if (body.set_current) {
-    try {
-      db.run('BEGIN');
-      db.run('UPDATE versions SET is_current = 0 WHERE prompt_id = ?', [version.prompt_id]);
-      db.run('UPDATE versions SET is_current = 1 WHERE id = ?', [id]);
-      db.run('COMMIT');
-    } catch (err) {
-      db.run('ROLLBACK');
-      throw err;
-    }
-  }
+  if (body.set_current) setCurrentVersion(version.prompt_id, id);
 
   if ('note' in body) {
     db.run('UPDATE versions SET note = ? WHERE id = ?', [body.note ?? null, id]);
@@ -66,40 +57,9 @@ router.patch('/:id', (req, res) => {
 
 // --- DELETE /api/versions/:id ---
 router.delete('/:id', (req, res) => {
-  const id = Number(req.params.id);
-
-  const version = db.get(
-    'SELECT prompt_id, is_current FROM versions WHERE id = ?',
-    [id]
-  ) as { prompt_id: number; is_current: number } | null;
-
-  if (!version) { res.status(404).json({ error: 'Version not found' }); return; }
-
-  const count = (db.get(
-    'SELECT COUNT(*) AS n FROM versions WHERE prompt_id = ?',
-    [version.prompt_id]
-  ) as { n: number }).n;
-
-  if (count <= 1) {
-    res.status(409).json({ error: 'Cannot delete the only version' });
-    return;
-  }
-
-  try {
-    db.run('BEGIN');
-    db.run('DELETE FROM versions WHERE id = ?', [id]);
-    if (version.is_current) {
-      db.run(
-        'UPDATE versions SET is_current = 1 WHERE id = (SELECT id FROM versions WHERE prompt_id = ? ORDER BY id DESC LIMIT 1)',
-        [version.prompt_id]
-      );
-    }
-    db.run('COMMIT');
-  } catch (err) {
-    db.run('ROLLBACK');
-    throw err;
-  }
-
+  const outcome = deleteVersion(Number(req.params.id));
+  if (outcome === 'missing') { res.status(404).json({ error: 'Version not found' }); return; }
+  if (outcome === 'only-version') { res.status(409).json({ error: 'Cannot delete the only version' }); return; }
   res.json({ ok: true });
 });
 

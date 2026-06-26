@@ -4,3 +4,4 @@ config.json
 *.db
 *.db-shm
 *.db-wal
+vite-dev.*.log

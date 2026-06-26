@@ -183,15 +183,35 @@ button {
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 6px;
+  gap: 4px;
   min-width: 0;
 }
 
 .entity-picker-wrap,
-.entity-menu-wrap,
-.entity-row-actions {
+.entity-menu-wrap {
   position: relative;
   display: inline-flex;
+  align-items: center;
+}
+
+.entity-picker-combo {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 24px 24px;
+  align-items: center;
+  min-height: 30px;
+  min-width: 180px;
+  max-width: 280px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text-secondary);
+}
+
+.entity-picker-combo:hover,
+.entity-picker-combo.open,
+.entity-picker-combo:focus-within {
+  color: var(--text-primary);
+  border-color: #aaa;
 }
 
 .entity-picker {
@@ -222,6 +242,30 @@ button {
 }
 .entity-picker:disabled { opacity: 0.55; cursor: default; }
 
+.entity-picker-combo .entity-picker {
+  min-width: 0;
+  max-width: none;
+  width: 100%;
+  min-height: 28px;
+  padding-right: 4px;
+  background: transparent;
+  border: none;
+  border-radius: 4px 0 0 4px;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.entity-picker-combo .entity-picker:hover:not(:disabled),
+.entity-picker-combo .entity-picker.open,
+.entity-picker-combo .entity-picker:focus {
+  border-color: transparent;
+}
+
+.compact-control .entity-picker-combo {
+  width: var(--compact-picker-width, 100%);
+  min-width: 0;
+  max-width: var(--compact-picker-max-width, none);
+}
+
 .entity-picker-label {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -230,8 +274,34 @@ button {
 }
 
 .entity-picker-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
   color: var(--text-muted);
   line-height: 1;
+}
+
+.entity-picker-arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 28px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 0 4px 4px 0;
+  color: var(--text-muted);
+  cursor: pointer;
+  font: inherit;
+}
+
+.entity-picker-arrow:hover,
+.entity-picker-arrow:focus-visible {
+  color: var(--text-primary);
+  background: transparent;
+  outline: none;
 }
 
 .entity-backdrop {
@@ -245,7 +315,9 @@ button {
   top: calc(100% + 6px);
   right: 0;
   z-index: 51;
-  width: min(320px, calc(100vw - 32px));
+  width: 100%;
+  min-width: 100%;
+  max-width: calc(100vw - 32px);
   max-height: 60vh;
   overflow-y: auto;
   display: flex;
@@ -327,21 +399,25 @@ button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  width: 24px;
+  height: 28px;
   padding: 0;
-  background: none;
-  border: none;
+  background: transparent;
+  border: 1px solid transparent;
   border-radius: 5px;
   color: var(--text-muted);
   cursor: pointer;
-  font-size: 18px;
+  font-size: 17px;
   line-height: 1;
+  opacity: 0.58;
 }
 .entity-kebab:hover,
+.entity-kebab:focus-visible,
 .entity-kebab[aria-expanded="true"] {
   color: var(--text-primary);
-  background: var(--bg-hover);
+  background: transparent;
+  border-color: transparent;
+  opacity: 1;
 }
 
 .entity-menu {
@@ -405,3 +481,33 @@ button {
   background: #d6a13a;
   flex-shrink: 0;
 }
+
+/* Dialog action buttons — the dark-primary + ghost pair shared across modals. */
+.btn-primary {
+  padding: 6px 14px;
+  background: #1a1a1a;
+  border: none;
+  border-radius: 4px;
+  color: #ffffff;
+  font-size: 13px;
+  font-family: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.btn-primary:hover:not(:disabled) { background: #333333; }
+.btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.btn-ghost {
+  padding: 5px 10px;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.12s, border-color 0.12s;
+}
+.btn-ghost:hover { color: var(--text-primary); border-color: #aaa; }

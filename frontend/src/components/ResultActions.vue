@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { api, type EvaluationInput, type EvaluationIssue, type Issue } from '../api';
+import FlagIssueModal from './FlagIssueModal.vue';
 
 const props = defineProps<{
   evaluation: EvaluationInput & { issue?: EvaluationIssue | null };
@@ -14,8 +15,6 @@ const emit = defineEmits<{
 
 const saving = ref(false);
 const showIssue = ref(false);
-const title = ref('');
-const note = ref('');
 const error = ref<string | null>(null);
 
 // Copy gives no other feedback, so the icon briefly swaps to a checkmark.
@@ -45,29 +44,13 @@ async function saveResult() {
 
 function openIssue() {
   if (props.evaluation.issue) return;
-  title.value = '';
-  note.value = '';
-  error.value = null;
   showIssue.value = true;
 }
 
-async function createIssue() {
-  if (!title.value.trim() || saving.value) return;
-  saving.value = true;
-  error.value = null;
-  try {
-    const data = { title: title.value.trim(), note: note.value.trim() || null };
-    const issue = props.savedId
-      ? await api.issues.createForEvaluation(props.savedId, data)
-      : await api.issues.createFromPrompt(props.evaluation.prompt_id, { ...data, evaluation: props.evaluation });
-    if (issue.evaluation_id) emit('saved', issue.evaluation_id);
-    showIssue.value = false;
-    emit('issueCreated', issue);
-  } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : 'Could not create issue';
-  } finally {
-    saving.value = false;
-  }
+function onIssueCreated(issue: Issue) {
+  if (issue.evaluation_id) emit('saved', issue.evaluation_id);
+  emit('issueCreated', issue);
+  showIssue.value = false;
 }
 </script>
 
@@ -112,28 +95,13 @@ async function createIssue() {
   </div>
   <p v-if="error && !showIssue" class="action-error">{{ error }}</p>
 
-  <Teleport to="body">
-    <div v-if="showIssue" class="overlay" @click.self="showIssue = false" @keydown.esc.window="showIssue = false">
-      <div class="modal">
-        <h2>Flag result as issue</h2>
-        <label>
-          <span>Title</span>
-          <input v-model="title" autofocus placeholder="What went wrong?" @keydown.enter="createIssue" />
-        </label>
-        <label>
-          <span>Note</span>
-          <textarea v-model="note" rows="5" placeholder="Optional context or expected behavior" />
-        </label>
-        <p v-if="error" class="action-error">{{ error }}</p>
-        <div class="modal-actions">
-          <button class="result-btn" @click="showIssue = false">Cancel</button>
-          <button class="result-btn primary" :disabled="saving || !title.trim()" @click="createIssue">
-            {{ saving ? 'Saving…' : 'Create issue' }}
-          </button>
-        </div>
-      </div>
-    </div>
-  </Teleport>
+  <FlagIssueModal
+    v-if="showIssue"
+    :evaluation="evaluation"
+    :saved-id="savedId"
+    @close="showIssue = false"
+    @created="onIssueCreated"
+  />
 </template>
 
 <style scoped>
@@ -159,17 +127,5 @@ async function createIssue() {
 /* Flag keeps an amber tint at rest so it reads as the heavier action. */
 .icon-btn.issue { color: #b88a55; }
 .icon-btn.issue:hover:not(:disabled) { color: #9a5a20; }
-/* Modal "Create issue" button retains the labelled-button styling. */
-.result-btn { padding: 4px 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text-muted); font: inherit; font-size: 11px; cursor: pointer; }
-.result-btn:hover:not(:disabled) { color: var(--text-primary); border-color: #aaa; }
-.result-btn:disabled { opacity: .5; cursor: default; }
-.result-btn.primary { background: #1a1a1a; color: #fff; border-color: #1a1a1a; }
 .action-error { margin-top: 6px; color: #c04040; font-size: 11px; }
-.overlay { position: fixed; inset: 0; z-index: 1200; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.55); }
-.modal { width: min(480px, 90vw); display: flex; flex-direction: column; gap: 16px; padding: 22px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); box-shadow: 0 20px 60px rgba(0,0,0,.25); }
-.modal h2 { font-size: 16px; font-weight: 600; }
-.modal label { display: flex; flex-direction: column; gap: 6px; color: var(--text-secondary); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
-.modal input, .modal textarea { width: 100%; padding: 9px 10px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg); color: var(--text-primary); font: inherit; font-size: 13px; text-transform: none; letter-spacing: 0; }
-.modal textarea { resize: vertical; }
-.modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
 </style>

@@ -71,6 +71,14 @@ export interface Issue extends EvaluationIssue {
 
 interface IssueRow extends Omit<EvaluationIssue, 'resolved_version'> {}
 
+export interface IssueUpdate {
+  title?: string;
+  note?: string | null;
+  status?: IssueStatus;
+  resolution_note?: string | null;
+  resolved_version_id?: number | null;
+}
+
 function mapEvaluation(row: EvaluationRow): Evaluation {
   const { variables_json, enable_thinking, ...rest } = row;
   const issue = getEvaluationIssue(rest.id);
@@ -80,14 +88,6 @@ function mapEvaluation(row: EvaluationRow): Evaluation {
     enable_thinking: enable_thinking === 1,
     issue,
   };
-}
-
-export function entityExists(table: 'prompts' | 'versions' | 'test_cases', id: number): boolean {
-  return db.get(`SELECT 1 AS found FROM ${table} WHERE id = ?`, [id]) !== null;
-}
-
-export function entityBelongsToPrompt(table: 'versions' | 'test_cases', id: number, promptId: number): boolean {
-  return db.get(`SELECT 1 AS found FROM ${table} WHERE id = ? AND prompt_id = ?`, [id, promptId]) !== null;
 }
 
 export function getEvaluation(id: number): Evaluation | null {
@@ -273,24 +273,22 @@ export function createIssue(
   }
 }
 
-export function updateIssue(
-  evaluationId: number,
-  values: Partial<{
-    title: string;
-    note: string | null;
-    status: IssueStatus;
-    resolution_note: string | null;
-    resolved_version_id: number | null;
-  }>
-): Issue | null {
+export function updateIssue(evaluationId: number, values: IssueUpdate): Issue | null {
   if (!getIssue(evaluationId)) return null;
+
   const fields: string[] = [];
   const params: Array<string | number | null> = [];
-  if (values.title !== undefined) { fields.push('title = ?'); params.push(values.title); }
-  if (values.note !== undefined) { fields.push('note = ?'); params.push(values.note); }
-  if (values.status !== undefined) { fields.push('status = ?'); params.push(values.status); }
-  if (values.resolution_note !== undefined) { fields.push('resolution_note = ?'); params.push(values.resolution_note); }
-  if (values.resolved_version_id !== undefined) { fields.push('resolved_version_id = ?'); params.push(values.resolved_version_id); }
+  const add = (column: string, value: string | number | null) => {
+    fields.push(`${column} = ?`);
+    params.push(value);
+  };
+
+  if (values.title !== undefined) add('title', values.title);
+  if (values.note !== undefined) add('note', values.note);
+  if (values.status !== undefined) add('status', values.status);
+  if (values.resolution_note !== undefined) add('resolution_note', values.resolution_note);
+  if (values.resolved_version_id !== undefined) add('resolved_version_id', values.resolved_version_id);
+
   if (fields.length) {
     fields.push('updated_at = unixepoch()');
     params.push(evaluationId);

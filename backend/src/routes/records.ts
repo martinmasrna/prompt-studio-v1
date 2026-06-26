@@ -6,8 +6,6 @@ import {
   deleteComparison,
   deleteEvaluation,
   deleteIssue,
-  entityBelongsToPrompt,
-  entityExists,
   getEvaluation,
   getIssue,
   listIssues,
@@ -17,12 +15,13 @@ import {
   updateIssue,
   type EvaluationInput,
   type EvaluationSource,
-  type IssueStatus,
+  type IssueUpdate,
 } from '../repositories/records';
+import { entityBelongsToPrompt, entityExists } from '../repositories/entities';
+import { ValidationError, numberInRange, stringRecord, PARAM_BOUNDS } from '../lib/validation';
 import { generatePromptDoctorPrompt } from '../prompts/promptDoctor';
 
 const router = Router();
-class ValidationError extends Error {}
 
 function objectBody(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new ValidationError('request body must be an object');
@@ -42,14 +41,6 @@ function nullableString(body: Record<string, unknown>, field: string): string | 
   return value;
 }
 
-function numberField(body: Record<string, unknown>, field: string, min: number, max: number, integer = false): number {
-  const value = body[field];
-  if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max || (integer && !Number.isInteger(value))) {
-    throw new ValidationError(`${field} is invalid`);
-  }
-  return value;
-}
-
 function nullableInteger(body: Record<string, unknown>, field: string): number | null {
   const value = body[field];
   if (value === null || value === undefined) return null;
@@ -57,34 +48,32 @@ function nullableInteger(body: Record<string, unknown>, field: string): number |
   return value as number;
 }
 
-function variablesField(value: unknown): Record<string, string> {
-  if (!value || typeof value !== 'object' || Array.isArray(value) || Object.values(value).some(item => typeof item !== 'string')) {
-    throw new ValidationError('variables must be an object whose values are strings');
-  }
-  return value as Record<string, string>;
-}
+const ID_BOUNDS = { min: 1, max: Number.MAX_SAFE_INTEGER, integer: true };
+const COUNT_BOUNDS = { min: 0, max: Number.MAX_SAFE_INTEGER, integer: true };
 
 function parseEvaluation(value: unknown): EvaluationInput {
   const body = objectBody(value);
   const source = requiredString(body, 'source') as EvaluationSource;
   if (!['sandbox', 'ab', 'manual'].includes(source)) throw new ValidationError('source is invalid');
   if (typeof body.enable_thinking !== 'boolean') throw new ValidationError('enable_thinking must be a boolean');
+  if (!stringRecord(body.variables)) throw new ValidationError('variables must be an object whose values are strings');
+  const variables = body.variables;
   return {
     test_case_id: nullableInteger(body, 'test_case_id'),
-    prompt_id: numberField(body, 'prompt_id', 1, Number.MAX_SAFE_INTEGER, true),
-    version_id: numberField(body, 'version_id', 1, Number.MAX_SAFE_INTEGER, true),
+    prompt_id: numberInRange(body.prompt_id, 'prompt_id', ID_BOUNDS),
+    version_id: numberInRange(body.version_id, 'version_id', ID_BOUNDS),
     source,
     prompt_name_snapshot: requiredString(body, 'prompt_name_snapshot'),
     test_name_snapshot: nullableString(body, 'test_name_snapshot'),
     version_name_snapshot: requiredString(body, 'version_name_snapshot'),
     prompt_template_snapshot: requiredString(body, 'prompt_template_snapshot', true),
     rendered_prompt_snapshot: requiredString(body, 'rendered_prompt_snapshot', true),
-    variables: variablesField(body.variables),
+    variables,
     system_prompt: requiredString(body, 'system_prompt', true),
-    temperature: numberField(body, 'temperature', 0, 2),
-    top_p: numberField(body, 'top_p', 0, 1),
-    top_k: numberField(body, 'top_k', 1, 200, true),
-    max_tokens: numberField(body, 'max_tokens', 64, 32768, true),
+    temperature: numberInRange(body.temperature, 'temperature', PARAM_BOUNDS.temperature),
+    top_p: numberInRange(body.top_p, 'top_p', PARAM_BOUNDS.top_p),
+    top_k: numberInRange(body.top_k, 'top_k', PARAM_BOUNDS.top_k),
+    max_tokens: numberInRange(body.max_tokens, 'max_tokens', PARAM_BOUNDS.max_tokens),
     enable_thinking: body.enable_thinking,
     model_id_snapshot: requiredString(body, 'model_id_snapshot'),
     model_label_snapshot: requiredString(body, 'model_label_snapshot'),
@@ -92,10 +81,10 @@ function parseEvaluation(value: unknown): EvaluationInput {
     response_text: nullableString(body, 'response_text'),
     error_text: nullableString(body, 'error_text'),
     tokens_used: body.tokens_used === null || body.tokens_used === undefined
-      ? null : numberField(body, 'tokens_used', 0, Number.MAX_SAFE_INTEGER, true),
+      ? null : numberInRange(body.tokens_used, 'tokens_used', COUNT_BOUNDS),
     latency_ms: body.latency_ms === null || body.latency_ms === undefined
-      ? null : numberField(body, 'latency_ms', 0, Number.MAX_SAFE_INTEGER, true),
-    executed_at: numberField(body, 'executed_at', 1, Number.MAX_SAFE_INTEGER, true),
+      ? null : numberInRange(body.latency_ms, 'latency_ms', COUNT_BOUNDS),
+    executed_at: numberInRange(body.executed_at, 'executed_at', ID_BOUNDS),
   };
 }
 
@@ -122,20 +111,8 @@ function positiveParam(value: string, field: string): number {
 function parseIssueUpdate(
   body: Record<string, unknown>,
   existing: NonNullable<ReturnType<typeof getIssue>>
-): Partial<{
-  title: string;
-  note: string | null;
-  status: IssueStatus;
-  resolution_note: string | null;
-  resolved_version_id: number | null;
-}> {
-  const values: Partial<{
-    title: string;
-    note: string | null;
-    status: IssueStatus;
-    resolution_note: string | null;
-    resolved_version_id: number | null;
-  }> = {};
+): IssueUpdate {
+  const values: IssueUpdate = {};
   if ('title' in body) values.title = requiredString(body, 'title');
   if ('note' in body) values.note = nullableString(body, 'note');
   if ('status' in body) {
@@ -177,7 +154,7 @@ router.post('/evaluations', (req, res) => {
 router.post('/comparisons', (req, res) => {
   try {
     const body = objectBody(req.body);
-    const promptId = numberField(body, 'prompt_id', 1, Number.MAX_SAFE_INTEGER, true);
+    const promptId = numberInRange(body.prompt_id, 'prompt_id', ID_BOUNDS);
     if (!Array.isArray(body.items) || body.items.length !== 2) {
       throw new ValidationError('comparisons require exactly two evaluations');
     }

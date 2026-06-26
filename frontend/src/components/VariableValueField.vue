@@ -13,7 +13,9 @@ const emit = defineEmits<{
   'update:modelValue': [value: string];
 }>();
 
-const expanded = ref(true);
+// Collapsed by default: in both Sandbox and A/B these are held-constant inputs you
+// set once, so they stay out of the way until you choose to edit one.
+const expanded = ref(false);
 const inputEl = ref<HTMLTextAreaElement | null>(null);
 let resizeObserver: ResizeObserver | null = null;
 let resizeFrame: number | null = null;
@@ -90,7 +92,7 @@ onBeforeUnmount(() => {
       :title="expanded ? `Collapse ${name}` : `Expand ${name}`"
       @click="toggleExpanded"
     >
-      <span class="variable-icon">{{ expanded ? '-' : '+' }}</span>
+      <span class="variable-icon" aria-hidden="true">{{ expanded ? '▾' : '▸' }}</span>
       <span class="variable-name">{{ name }}</span>
       <span class="variable-preview" :class="{ empty: isEmpty }">{{ valuePreview }}</span>
     </button>
@@ -157,7 +159,7 @@ onBeforeUnmount(() => {
   background: var(--bg);
   color: var(--text-muted);
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: 10px;
   line-height: 1;
   flex-shrink: 0;
 }

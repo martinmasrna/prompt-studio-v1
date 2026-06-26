@@ -1,6 +1,6 @@
 {
-  "_comment": "Copy this file to config.json and fill it in. config.json is git-ignored, so your server addresses stay private. 'id' is a stable identifier (optional; defaults to 'label') that saved results and the user's model selection reference — keep it fixed so renaming 'label' never breaks history. 'label' is the renameable display name shown in the Settings picker. 'defaultModel' (optional) is the id to start on (a label is also accepted for older configs). 'port' (optional, default 4701) is the backend port; the frontend dev proxy reads it from here automatically — restart the app after changing it.",
-  "port": 4701,
+  "_comment": "Copy this file to config.json and fill it in. config.json is git-ignored, so your server addresses stay private. 'id' is a stable identifier (optional; defaults to 'label') that saved results and the user's model selection reference — keep it fixed so renaming 'label' never breaks history. 'label' is the renameable display name shown in the Settings picker. 'defaultModel' (optional) is the id to start on (a label is also accepted for older configs). 'port' (optional, default 4747) is the backend port; the frontend dev proxy reads it from here automatically — restart the app after changing it.",
+  "port": 4747,
   "defaultModel": "qwen-35b",
   "models": [
     {

@@ -12,10 +12,11 @@ import { activeModelId } from '../store/settings';
 import { temperature, topP, topK, maxTokens, enableThinking } from '../store/configs';
 import TestCaseControls from '../components/TestCaseControls.vue';
 import ConfigControls from '../components/ConfigControls.vue';
+import ParameterControls from '../components/ParameterControls.vue';
 import VariablesPanel from '../components/VariablesPanel.vue';
 import ResultActions from '../components/ResultActions.vue';
 import { extractVariables, missingVariables, substituteVariables } from '../utils/variables';
-import { captureEvaluationContext, completeEvaluation } from '../utils/evaluations';
+import { buildRunRequest, captureEvaluationContext, completeEvaluation, type RunSettings } from '../utils/evaluations';
 
 // Literal "{{variables}}" for the empty-state hint — kept as data so it isn't
 // parsed as a template interpolation.
@@ -49,17 +50,17 @@ async function runLLM() {
     'sandbox', activeVersionId.value, activeVersionText.value, userMessage.value
   );
 
+  const settings: RunSettings = {
+    system_prompt: activeSystemPrompt.value,
+    temperature: temperature.value,
+    top_p: topP.value,
+    top_k: topK.value,
+    max_tokens: maxTokens.value,
+    enable_thinking: enableThinking.value,
+  };
+
   try {
-    const result = await api.llm.run({
-      system_prompt: activeSystemPrompt.value || undefined,
-      user_message:  userMessage.value,
-      model_id:      activeModelId.value ?? undefined,
-      temperature:   temperature.value,
-      top_p:         topP.value,
-      top_k:         topK.value,
-      max_tokens:    maxTokens.value,
-      enable_thinking: enableThinking.value,
-    } as Parameters<typeof api.llm.run>[0]);
+    const result = await api.llm.run(buildRunRequest(userMessage.value, settings, activeModelId.value));
 
     setSandboxOutput({
       text:        result.text,
@@ -90,7 +91,7 @@ const renderedOutput = computed(() =>
     <section class="panel-box">
       <header class="box-header">
         <h3 class="box-title">Variables</h3>
-        <TestCaseControls compact />
+        <TestCaseControls />
       </header>
       <div class="box-body">
         <VariablesPanel v-if="detectedVars.length" :detected-vars="detectedVars" hide-label />
@@ -102,40 +103,10 @@ const renderedOutput = computed(() =>
     <section class="panel-box">
       <header class="box-header">
         <h3 class="box-title">Parameters</h3>
-        <ConfigControls compact />
+        <ConfigControls />
       </header>
       <div class="box-body">
-        <div class="param-grid">
-          <div class="param">
-            <label class="field-label">Temperature <span class="param-value">{{ temperature.toFixed(1) }}</span></label>
-            <input v-model.number="temperature" aria-label="Temperature" type="range" min="0" max="2" step="0.1" class="slider" />
-          </div>
-          <div class="param">
-            <label class="field-label">Top-P <span class="param-value">{{ topP.toFixed(2) }}</span></label>
-            <input v-model.number="topP" type="range" min="0" max="1" step="0.01" class="slider" />
-          </div>
-          <div class="param">
-            <label class="field-label">Top-K</label>
-            <input v-model.number="topK" type="number" min="1" max="200" class="num-input" />
-          </div>
-          <div class="param">
-            <label class="field-label">Max tokens</label>
-            <input v-model.number="maxTokens" type="number" min="64" max="32768" class="num-input" />
-          </div>
-        </div>
-
-        <label class="toggle-row">
-          <span class="toggle-label">Thinking mode</span>
-          <button
-            class="toggle-switch"
-            :class="{ on: enableThinking }"
-            role="switch"
-            :aria-checked="enableThinking"
-            @click="enableThinking = !enableThinking"
-          >
-            <span class="toggle-thumb" />
-          </button>
-        </label>
+        <ParameterControls />
       </div>
     </section>
 
@@ -224,89 +195,15 @@ const renderedOutput = computed(() =>
   margin: 0;
 }
 
+.box-header :deep(.compact-control) {
+  --compact-picker-width: clamp(280px, 34vw, 420px);
+  --compact-picker-max-width: 100%;
+}
+
 .box-body { padding: 16px; }
 
 .box-empty { color: var(--text-faint); font-size: 12.5px; margin: 0; }
 .box-empty code { font-family: var(--font-mono); font-size: 11.5px; background: var(--bg-selected); padding: 1px 5px; border-radius: 3px; }
-
-.field-label {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-
-/* Params */
-.param-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; }
-.param { display: flex; flex-direction: column; gap: 6px; }
-
-.param-value { font-weight: 400; color: var(--text-secondary); font-size: 10px; text-transform: none; letter-spacing: 0; }
-
-.slider { width: 100%; accent-color: #888; cursor: pointer; }
-
-.num-input {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  color: var(--text-primary);
-  font-family: inherit;
-  font-size: 13px;
-  min-height: 34px;
-  padding: 6px 9px;
-  width: 100%;
-}
-.num-input:focus { outline: none; border-color: #aaa; }
-
-/* Thinking toggle */
-.toggle-row {
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 10px;
-  align-self: flex-start;
-  cursor: pointer;
-  margin-top: 16px;
-}
-
-.toggle-label {
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-
-.toggle-switch {
-  position: relative;
-  width: 32px;
-  height: 18px;
-  background: var(--border);
-  border: none;
-  border-radius: 9px;
-  cursor: pointer;
-  transition: background 0.18s;
-  flex-shrink: 0;
-  padding: 0;
-}
-.toggle-switch.on { background: #1a1a1a; }
-
-.toggle-thumb {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 14px;
-  height: 14px;
-  background: #fff;
-  border-radius: 50%;
-  transition: transform 0.18s;
-  display: block;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-}
-.toggle-switch.on .toggle-thumb { transform: translateX(14px); }
 
 /* Run */
 .run-row { display: flex; justify-content: flex-end; }
@@ -377,31 +274,8 @@ const renderedOutput = computed(() =>
   font-family: var(--font-mono);
 }
 
+/* Container only; element styling comes from the global .markdown-body class. */
 .output-text {
-  font-family: var(--font-sans);
   font-size: 13.5px;
-  line-height: 1.7;
-  color: var(--text-primary);
-  word-break: break-word;
 }
-
-/* Markdown element styles */
-.output-text :deep(p)             { margin: 0 0 12px; }
-.output-text :deep(p:last-child)  { margin-bottom: 0; }
-.output-text :deep(h1),
-.output-text :deep(h2),
-.output-text :deep(h3)            { font-weight: 600; margin: 20px 0 8px; color: var(--text-primary); }
-.output-text :deep(h1)            { font-size: 17px; }
-.output-text :deep(h2)            { font-size: 15px; }
-.output-text :deep(h3)            { font-size: 13.5px; }
-.output-text :deep(ul),
-.output-text :deep(ol)            { padding-left: 20px; margin: 0 0 12px; }
-.output-text :deep(li)            { margin-bottom: 4px; }
-.output-text :deep(code)          { font-family: var(--font-mono); font-size: 12px; background: var(--bg-selected); padding: 1px 5px; border-radius: 3px; }
-.output-text :deep(pre)           { background: var(--bg-selected); border-radius: 5px; padding: 12px 14px; overflow-x: auto; margin: 0 0 12px; }
-.output-text :deep(pre code)      { background: none; padding: 0; font-size: 12px; }
-.output-text :deep(blockquote)    { border-left: 3px solid var(--border); margin: 0 0 12px; padding: 4px 0 4px 14px; color: var(--text-secondary); }
-.output-text :deep(hr)            { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
-.output-text :deep(strong)        { font-weight: 600; }
-.output-text :deep(a)             { color: var(--text-primary); text-decoration: underline; }
 </style>

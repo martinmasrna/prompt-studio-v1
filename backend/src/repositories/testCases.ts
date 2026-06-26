@@ -28,10 +28,6 @@ function mapRow(row: TestCaseRow): TestCase {
   };
 }
 
-export function promptExists(promptId: number): boolean {
-  return db.get('SELECT 1 AS found FROM prompts WHERE id = ?', [promptId]) !== null;
-}
-
 export function listTestCases(promptId: number): TestCase[] {
   const rows = db.all(
     'SELECT * FROM test_cases WHERE prompt_id = ? ORDER BY name COLLATE NOCASE, id',

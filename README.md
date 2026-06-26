@@ -255,7 +255,7 @@ The list of models is declared once in `backend/config.json` (set up during
    the model name that server expects; models may live on **different servers**:
    ```json
    {
-     "port": 4701,
+     "port": 4747,
      "defaultModel": "Qwen 35B",
      "models": [
        { "label": "Qwen 35B",  "uri": "http://host-a:8009", "model": "Qwen3.6-35B-...gguf" },
@@ -266,7 +266,7 @@ The list of models is declared once in `backend/config.json` (set up during
    - `label` is what you'll see and pick in the **Settings** menu (must be unique).
    - `uri` is that model's server address; `model` is the exact name it expects.
    - `defaultModel` (optional) is the label to start on.
-   - `port` (optional, default `4701`) — the backend port. The frontend's dev
+   - `port` (optional, default `4747`) — the backend port. The frontend's dev
      proxy reads it from here automatically; just restart the app after changing it.
 
    For a single model, just list one entry. You can change this list anytime and
@@ -296,7 +296,7 @@ git.
 | Settings shows **"No models configured"** | `backend/config.json` is missing or has an empty `models` list. Copy `backend/config.example.json` and fill it in. |
 | Settings shows a **"Could not read model catalog"** error | `backend/config.json` has a syntax error. Check it's valid JSON (commas, quotes, brackets). |
 | A run shows **"Request timed out"** | The model took longer than 5 minutes (very large prompt, or a busy/slow server). Try a shorter prompt or a smaller "Max tokens". |
-| The page won't open at `localhost:4700` | The app isn't running — start it with `npm run dev`. Make sure nothing else is using ports 4700/4701. |
+| The page won't open at `localhost:4700` | The app isn't running — start it with `npm run dev`. Make sure nothing else is using ports 4700/4747. |
 | **`npm` not found** | Node.js isn't installed or isn't on your PATH. Install it from [nodejs.org](https://nodejs.org/). |
 
 ---
@@ -325,7 +325,7 @@ A lightweight, fully local two‑process app.
 **Stack**
 - **Frontend:** Vue 3 + TypeScript + Vite, plain CSS. Dev server on **port 4700**,
   which proxies `/api/*` to the backend.
-- **Backend:** Node.js + Express + TypeScript on **port 4701**. A thin REST API
+- **Backend:** Node.js + Express + TypeScript on **port 4747**. A thin REST API
   plus a proxy to the LLM server (so the model address never reaches the browser).
 - **Database:** SQLite via [`node-sqlite3-wasm`](https://www.npmjs.com/package/node-sqlite3-wasm)
   (WASM build — no native compilation needed). One file at `backend/data/`.

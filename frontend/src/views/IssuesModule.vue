@@ -3,6 +3,8 @@ import { computed, nextTick, ref, watch } from 'vue';
 import { api, type Issue } from '../api';
 import { activeIssueEvaluationId, activePromptData, versions as promptVersions } from '../store/editor';
 import ResultCard from '../components/ResultCard.vue';
+import BaseModal from '../components/BaseModal.vue';
+import KebabMenu from '../components/KebabMenu.vue';
 
 const issues = ref<Issue[]>([]);
 const filter = ref<'open' | 'diagnosed' | 'closed'>('open');
@@ -23,7 +25,6 @@ const resolutionNote = ref('');
 const resolvedVersionId = ref('');
 const resolutionError = ref<string | null>(null);
 const savingResolution = ref(false);
-const openMenuId = ref<number | null>(null);
 let copiedResetTimer: ReturnType<typeof setTimeout> | null = null;
 
 const visibleIssues = computed(() => issues.value.filter(issue => issue.status === filter.value));
@@ -38,8 +39,6 @@ function removeLocalIssue(issue: Issue) {
   issues.value = issues.value.filter(item => item.evaluation_id !== issue.evaluation_id);
 }
 
-function toggleMenu(id: number) { openMenuId.value = openMenuId.value === id ? null : id; }
-
 async function load() {
   const promptId = activePromptData.value?.id;
   if (!promptId) return;
@@ -51,7 +50,6 @@ async function load() {
 }
 
 async function toggle(issue: Issue) {
-  openMenuId.value = null;
   if (issue.status !== 'closed') {
     resolutionIssue.value = issue;
     resolutionTargetStatus.value = issue.status === 'open' ? 'diagnosed' : 'closed';
@@ -88,7 +86,6 @@ async function saveResolution() {
 }
 
 function beginEdit(issue: Issue) {
-  openMenuId.value = null;
   editingId.value = issue.evaluation_id;
   editTitle.value = issue.title;
   editNote.value = issue.note ?? '';
@@ -106,7 +103,6 @@ async function saveEdit(issue: Issue) {
 }
 
 async function remove(issue: Issue) {
-  openMenuId.value = null;
   try {
     if (confirm('Remove the issue flag and keep this saved result?')) {
       await api.issues.delete(issue.evaluation_id);
@@ -128,7 +124,6 @@ async function remove(issue: Issue) {
 }
 
 async function openPromptDoctor(issue: Issue) {
-  openMenuId.value = null;
   showDoctor.value = true;
   doctorLoading.value = true;
   doctorPrompt.value = '';
@@ -216,19 +211,13 @@ watch([issues, activeIssueEvaluationId], async () => {
               </svg>
               <span>Prompt Doctor</span>
             </button>
-            <div class="menu-wrap">
-              <button class="kebab" aria-label="Issue actions" @click.stop="toggleMenu(issue.evaluation_id)">&#8942;</button>
-              <template v-if="openMenuId === issue.evaluation_id">
-                <div class="menu-backdrop" @click.stop="openMenuId = null" />
-                <div class="menu" role="menu" @click.stop>
-                  <button role="menuitem" @click="beginEdit(issue)">Edit issue</button>
-                  <button role="menuitem" @click="toggle(issue)">
-                    {{ issue.status === 'open' ? 'Mark diagnosed' : issue.status === 'diagnosed' ? 'Close' : 'Reopen' }}
-                  </button>
-                  <button role="menuitem" class="danger" @click="remove(issue)">Delete</button>
-                </div>
-              </template>
-            </div>
+            <KebabMenu label="Issue actions">
+              <button role="menuitem" @click="beginEdit(issue)">Edit issue</button>
+              <button role="menuitem" @click="toggle(issue)">
+                {{ issue.status === 'open' ? 'Mark diagnosed' : issue.status === 'diagnosed' ? 'Close' : 'Reopen' }}
+              </button>
+              <button role="menuitem" class="danger" @click="remove(issue)">Delete</button>
+            </KebabMenu>
           </div>
         </template>
 
@@ -256,74 +245,70 @@ watch([issues, activeIssueEvaluationId], async () => {
       </ResultCard>
     </div>
 
-    <Teleport to="body">
-      <div v-if="showResolution" class="overlay" @click.self="showResolution = false" @keydown.esc.window="showResolution = false">
-        <div class="modal resolution-modal" role="dialog" aria-modal="true" aria-labelledby="resolution-title">
-          <h2 id="resolution-title">{{ resolutionTargetStatus === 'diagnosed' ? 'Mark issue as diagnosed' : 'Close issue' }}</h2>
-          <p class="modal-sub">
-            {{ resolutionTargetStatus === 'diagnosed'
-              ? 'Capture the diagnosis and optionally link the version planned to implement the fix.'
-              : 'Review the diagnosis, record the verified outcome, and link the version that resolved it.' }}
-          </p>
-          <label>
-            <span>Diagnosis and resolution notes</span>
-            <textarea
-              v-model="resolutionNote"
-              autofocus
-              rows="12"
-              placeholder="Paste the Prompt Doctor diagnosis, recommended changes, and verification notes."
-            />
-          </label>
-          <label>
-            <span>Resolved in version</span>
-            <select v-model="resolvedVersionId">
-              <option value="">No linked version</option>
-              <option v-for="version in promptVersions" :key="version.id" :value="String(version.id)">
-                {{ version.name }}{{ version.is_current ? ' - current' : '' }}
-              </option>
-            </select>
-          </label>
-          <p v-if="resolutionError" class="error">{{ resolutionError }}</p>
-          <div class="actions">
-            <button class="btn" :disabled="savingResolution" @click="showResolution = false">Cancel</button>
-            <button class="btn primary" :disabled="savingResolution" @click="saveResolution">
-              {{ savingResolution
-                ? 'Saving...'
-                : resolutionTargetStatus === 'diagnosed' ? 'Mark diagnosed' : 'Close issue' }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
-
-    <Teleport to="body">
-      <div v-if="showDoctor" class="overlay" @click.self="closePromptDoctor" @keydown.esc.window="closePromptDoctor">
-        <div class="modal doctor-modal" role="dialog" aria-modal="true" aria-labelledby="doctor-title">
-          <div class="doctor-header">
-            <div>
-              <h2 id="doctor-title">Prompt Doctor</h2>
-              <p>Copy this prompt into a cloud model to begin the diagnostic interview.</p>
-            </div>
-            <button class="modal-close" aria-label="Close Prompt Doctor" @click="closePromptDoctor">&times;</button>
-          </div>
-          <p v-if="doctorLoading" class="empty">Preparing diagnostic prompt...</p>
-          <p v-if="doctorError" class="error">{{ doctorError }}</p>
+    <BaseModal v-if="showResolution" width="640px" @close="showResolution = false">
+      <div class="resolution-modal" role="dialog" aria-modal="true" aria-labelledby="resolution-title">
+        <h2 id="resolution-title">{{ resolutionTargetStatus === 'diagnosed' ? 'Mark issue as diagnosed' : 'Close issue' }}</h2>
+        <p class="modal-sub">
+          {{ resolutionTargetStatus === 'diagnosed'
+            ? 'Capture the diagnosis and optionally link the version planned to implement the fix.'
+            : 'Review the diagnosis, record the verified outcome, and link the version that resolved it.' }}
+        </p>
+        <label>
+          <span>Diagnosis and resolution notes</span>
           <textarea
-            v-if="doctorPrompt"
-            class="doctor-prompt"
-            :value="doctorPrompt"
-            readonly
-            rows="24"
-            aria-label="Generated Prompt Doctor prompt"
+            v-model="resolutionNote"
+            autofocus
+            rows="12"
+            placeholder="Paste the Prompt Doctor diagnosis, recommended changes, and verification notes."
           />
-          <div class="actions">
-            <button class="btn primary" :disabled="doctorLoading || !doctorPrompt" @click="copyPromptDoctor">
-              {{ doctorCopied ? 'Copied' : 'Copy prompt' }}
-            </button>
-          </div>
+        </label>
+        <label>
+          <span>Resolved in version</span>
+          <select v-model="resolvedVersionId">
+            <option value="">No linked version</option>
+            <option v-for="version in promptVersions" :key="version.id" :value="String(version.id)">
+              {{ version.name }}{{ version.is_current ? ' - current' : '' }}
+            </option>
+          </select>
+        </label>
+        <p v-if="resolutionError" class="error">{{ resolutionError }}</p>
+        <div class="actions">
+          <button class="btn" :disabled="savingResolution" @click="showResolution = false">Cancel</button>
+          <button class="btn primary" :disabled="savingResolution" @click="saveResolution">
+            {{ savingResolution
+              ? 'Saving...'
+              : resolutionTargetStatus === 'diagnosed' ? 'Mark diagnosed' : 'Close issue' }}
+          </button>
         </div>
       </div>
-    </Teleport>
+    </BaseModal>
+
+    <BaseModal v-if="showDoctor" width="820px" @close="closePromptDoctor">
+      <div class="doctor-modal" role="dialog" aria-modal="true" aria-labelledby="doctor-title">
+        <div class="doctor-header">
+          <div>
+            <h2 id="doctor-title">Prompt Doctor</h2>
+            <p>Copy this prompt into a cloud model to begin the diagnostic interview.</p>
+          </div>
+          <button class="modal-close" aria-label="Close Prompt Doctor" @click="closePromptDoctor">&times;</button>
+        </div>
+        <p v-if="doctorLoading" class="empty">Preparing diagnostic prompt...</p>
+        <p v-if="doctorError" class="error">{{ doctorError }}</p>
+        <textarea
+          v-if="doctorPrompt"
+          class="doctor-prompt"
+          :value="doctorPrompt"
+          readonly
+          rows="24"
+          aria-label="Generated Prompt Doctor prompt"
+        />
+        <div class="actions">
+          <button class="btn primary" :disabled="doctorLoading || !doctorPrompt" @click="copyPromptDoctor">
+            {{ doctorCopied ? 'Copied' : 'Copy prompt' }}
+          </button>
+        </div>
+      </div>
+    </BaseModal>
   </div>
 </template>
 
@@ -356,28 +341,16 @@ header p { margin-top: 5px; color: var(--text-muted); font-size: 13px; }
 .doctor-icon { width: 13px; height: 13px; flex: none; }
 .btn.danger:hover { color: #b33; }
 .btn:disabled { opacity: .5; cursor: default; }
-.menu-wrap { position: relative; }
-.kebab { padding: 2px 6px; border: none; border-radius: 4px; background: none; color: var(--text-muted); font-size: 16px; line-height: 1; cursor: pointer; }
-.kebab:hover { background: var(--bg-selected); color: var(--text-primary); }
-.menu-backdrop { position: fixed; inset: 0; z-index: 1100; }
-.menu { position: absolute; top: 100%; right: 0; z-index: 1101; min-width: 150px; margin-top: 4px; padding: 4px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); box-shadow: 0 8px 24px rgba(0,0,0,.14); display: flex; flex-direction: column; }
-.menu button { padding: 7px 10px; border: none; border-radius: 4px; background: none; color: var(--text-secondary); font: inherit; font-size: 12px; text-align: left; cursor: pointer; }
-.menu button:hover { background: var(--bg-selected); color: var(--text-primary); }
-.menu button.danger { color: #b33; }
-.menu button.danger:hover { background: #fdeaea; }
 input, textarea { width: 100%; padding: 9px 10px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg); color: var(--text-primary); font: inherit; }
 .title-input { margin-bottom: 9px; font-weight: 600; }
 .empty { color: var(--text-faint); font-size: 13px; }
 .error { color: #c04040; }
-.overlay { position: fixed; inset: 0; z-index: 1200; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.55); }
-.modal { width: min(480px,90vw); display: flex; flex-direction: column; gap: 13px; padding: 22px; border-radius: 8px; background: var(--bg); }
-.modal h2 { font-size: 16px; }
 .modal-sub { color: var(--text-muted); font-size: 12px; line-height: 1.45; }
-.resolution-modal { width: min(640px, 92vw); max-height: 90vh; }
+.resolution-modal, .doctor-modal { display: flex; flex-direction: column; gap: 13px; }
+.resolution-modal h2, .doctor-header h2 { font-size: 16px; }
 .resolution-modal label { display: flex; flex-direction: column; gap: 6px; color: var(--text-secondary); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
 .resolution-modal textarea, .resolution-modal select { width: 100%; padding: 9px 10px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg); color: var(--text-primary); font: inherit; font-size: 13px; text-transform: none; letter-spacing: 0; }
 .resolution-modal textarea { min-height: 180px; resize: vertical; }
-.doctor-modal { width: min(820px, 92vw); max-height: 90vh; }
 .doctor-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; }
 .doctor-header p { margin-top: 5px; color: var(--text-muted); font-size: 12px; }
 .modal-close { flex: none; width: 28px; height: 28px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text-muted); font-size: 20px; line-height: 20px; cursor: pointer; }

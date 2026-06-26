@@ -30,10 +30,6 @@ function mapRow(row: ConfigRow): Config {
   return { ...row, enable_thinking: row.enable_thinking === 1 };
 }
 
-export function promptExists(promptId: number): boolean {
-  return db.get('SELECT 1 AS found FROM prompts WHERE id = ?', [promptId]) !== null;
-}
-
 // A version's default_config_id is optional, but when set it must point at a
 // config belonging to the same prompt. Returns true for "no default" too.
 export function configBelongsToPrompt(configId: number | null | undefined, promptId: number): boolean {
@@ -50,7 +46,7 @@ export function listConfigs(promptId: number): Config[] {
   return rows.map(mapRow);
 }
 
-export function getConfig(id: number): Config | null {
+export function getConfigById(id: number): Config | null {
   const row = db.get('SELECT * FROM configs WHERE id = ?', [id]) as unknown as ConfigRow | null;
   return row ? mapRow(row) : null;
 }
@@ -70,11 +66,11 @@ export function createConfig(promptId: number, values: ConfigValues): Config {
       values.enable_thinking ? 1 : 0,
     ]
   );
-  return getConfig(Number(result.lastInsertRowid))!;
+  return getConfigById(Number(result.lastInsertRowid))!;
 }
 
 export function updateConfig(id: number, values: Partial<ConfigValues>): Config | null {
-  if (!getConfig(id)) return null;
+  if (!getConfigById(id)) return null;
 
   const fields: string[] = [];
   const params: Array<string | number | null> = [];
@@ -96,7 +92,7 @@ export function updateConfig(id: number, values: Partial<ConfigValues>): Config 
     db.run(`UPDATE configs SET ${fields.join(', ')} WHERE id = ?`, params);
   }
 
-  return getConfig(id);
+  return getConfigById(id);
 }
 
 export function deleteConfig(id: number): boolean {

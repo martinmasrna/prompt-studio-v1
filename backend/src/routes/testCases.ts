@@ -4,10 +4,11 @@ import {
   deleteTestCase,
   getTestCase,
   listTestCases,
-  promptExists,
   updateTestCase,
   type TestCaseValues,
 } from '../repositories/testCases';
+import { entityExists } from '../repositories/entities';
+import { ValidationError, stringRecord, uniqueNameError } from '../lib/validation';
 
 const router = Router();
 
@@ -15,13 +16,6 @@ const DEFAULTS: Omit<TestCaseValues, 'name'> = {
   description: null,
   variables: {},
 };
-
-class ValidationError extends Error {}
-
-function stringRecord(value: unknown): value is Record<string, string> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-    && Object.values(value).every(item => typeof item === 'string');
-}
 
 function parseValues(body: unknown, partial: boolean): Partial<TestCaseValues> {
   if (body === null || typeof body !== 'object' || Array.isArray(body)) {
@@ -53,14 +47,9 @@ function parseValues(body: unknown, partial: boolean): Partial<TestCaseValues> {
   return result;
 }
 
-function isUniqueNameError(error: unknown): boolean {
-  return error instanceof Error
-    && error.message.includes('UNIQUE constraint failed: test_cases.prompt_id, test_cases.name');
-}
-
 router.get('/prompts/:promptId/test-cases', (req, res) => {
   const promptId = Number(req.params.promptId);
-  if (!Number.isInteger(promptId) || !promptExists(promptId)) {
+  if (!Number.isInteger(promptId) || !entityExists('prompts', promptId)) {
     res.status(404).json({ error: 'Prompt not found' });
     return;
   }
@@ -69,7 +58,7 @@ router.get('/prompts/:promptId/test-cases', (req, res) => {
 
 router.post('/prompts/:promptId/test-cases', (req, res) => {
   const promptId = Number(req.params.promptId);
-  if (!Number.isInteger(promptId) || !promptExists(promptId)) {
+  if (!Number.isInteger(promptId) || !entityExists('prompts', promptId)) {
     res.status(404).json({ error: 'Prompt not found' });
     return;
   }
@@ -79,7 +68,7 @@ router.post('/prompts/:promptId/test-cases', (req, res) => {
     res.status(201).json(testCase);
   } catch (error) {
     if (error instanceof ValidationError) res.status(400).json({ error: error.message });
-    else if (isUniqueNameError(error)) res.status(409).json({ error: 'A test with this name already exists for the prompt' });
+    else if (uniqueNameError(error, 'test_cases')) res.status(409).json({ error: 'A test with this name already exists for the prompt' });
     else throw error;
   }
 });
@@ -98,7 +87,7 @@ router.patch('/test-cases/:id', (req, res) => {
     res.json(testCase);
   } catch (error) {
     if (error instanceof ValidationError) res.status(400).json({ error: error.message });
-    else if (isUniqueNameError(error)) res.status(409).json({ error: 'A test with this name already exists for the prompt' });
+    else if (uniqueNameError(error, 'test_cases')) res.status(409).json({ error: 'A test with this name already exists for the prompt' });
     else throw error;
   }
 });

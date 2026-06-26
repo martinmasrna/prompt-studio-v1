@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // Save-as-new-version modal. Triggered from anywhere via showSaveModal (currently
-// LeftPanel's "Save changes" button). Teleported to body so it overlays everything.
+// LeftPanel's "Save changes" button). The overlay/teleport live in BaseModal.
 import { ref, watch } from 'vue';
 import { api } from '../api';
 import {
@@ -9,6 +9,7 @@ import {
   versions, showSaveModal, newVersionDraftText,
 } from '../store/editor';
 import { selectedConfigId } from '../store/configs';
+import BaseModal from './BaseModal.vue';
 
 const saveName = ref('');
 const saveNote = ref('');
@@ -55,76 +56,35 @@ watch(showSaveModal, open => {
 </script>
 
 <template>
-  <Teleport to="body">
-    <div v-if="showSaveModal" class="overlay" @click.self="showSaveModal = false">
-      <div class="modal">
-        <h2 class="modal-title">New version</h2>
+  <BaseModal v-if="showSaveModal" @close="showSaveModal = false">
+    <template #title>New version</template>
 
-        <input
-          v-model="saveName"
-          class="modal-input"
-          placeholder="Version name (e.g. concise rewrite, v2, formal-tone)"
-          @keydown.enter="confirmSaveVersion"
-          autofocus
-        />
+    <input
+      v-model="saveName"
+      class="modal-input"
+      placeholder="Version name (e.g. concise rewrite, v2, formal-tone)"
+      @keydown.enter="confirmSaveVersion"
+      autofocus
+    />
+    <textarea
+      v-model="saveNote"
+      class="modal-textarea"
+      placeholder="Description"
+      rows="3"
+    />
 
-        <textarea
-          v-model="saveNote"
-          class="modal-textarea"
-          placeholder="Description"
-          rows="3"
-        />
-
-        <div class="modal-actions">
-          <button class="btn-ghost" @click="showSaveModal = false">Cancel</button>
-          <button class="btn-primary" :disabled="saving || !saveName.trim()" @click="confirmSaveVersion">
-            {{ saving ? 'Creating...' : 'Create version' }}
-          </button>
-        </div>
-      </div>
-    </div>
-  </Teleport>
+    <template #actions>
+      <button class="btn-ghost" @click="showSaveModal = false">Cancel</button>
+      <button class="btn-primary" :disabled="saving || !saveName.trim()" @click="confirmSaveVersion">
+        {{ saving ? 'Creating...' : 'Create version' }}
+      </button>
+    </template>
+  </BaseModal>
 </template>
 
-<!-- Modal styles are global because Teleport moves the markup outside this component's root -->
-<style>
-.overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.25);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-
-.modal {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  box-shadow: 0 8px 32px rgba(0,0,0,0.12);
-  border-radius: 8px;
-  padding: 24px;
-  width: 400px;
-  max-width: calc(100vw - 40px);
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.modal-title {
-  font-size: 15px;
-  font-weight: 500;
-  color: var(--text-primary);
-}
-
-.modal-sub {
-  font-size: 13px;
-  color: var(--text-muted);
-  margin-top: -8px;
-}
-
-.modal-textarea,
-.modal-input {
+<style scoped>
+.modal-input,
+.modal-textarea {
   width: 100%;
   background: var(--bg-sunken);
   border: 1px solid var(--border);
@@ -135,46 +95,7 @@ watch(showSaveModal, open => {
   padding: 8px 10px;
   resize: vertical;
 }
-
 .modal-input { resize: none; }
-
-.modal-textarea:focus,
-.modal-input:focus { outline: none; border-color: #aaa; }
-
-.modal-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-.btn-ghost {
-  padding: 5px 10px;
-  background: none;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--text-muted);
-  font-size: 12px;
-  font-family: inherit;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: color 0.12s, border-color 0.12s;
-}
-
-.btn-ghost:hover { color: var(--text-primary); border-color: #aaa; }
-
-.btn-primary {
-  padding: 6px 14px;
-  background: #1a1a1a;
-  border: none;
-  border-radius: 4px;
-  color: #ffffff;
-  font-size: 13px;
-  font-family: inherit;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background 0.12s;
-}
-
-.btn-primary:hover:not(:disabled) { background: #333333; }
-.btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+.modal-input:focus,
+.modal-textarea:focus { outline: none; border-color: #aaa; }
 </style>

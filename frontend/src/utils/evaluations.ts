@@ -79,3 +79,18 @@ export function completeEvaluation(
     latency_ms: result.latency_ms,
   };
 }
+
+// The request body /api/llm/run expects. An empty system prompt is sent as
+// undefined (omitted) rather than an empty string.
+export function buildRunRequest(userMessage: string, settings: RunSettings, modelId: string | null) {
+  return {
+    user_message: userMessage,
+    model_id: modelId ?? undefined,
+    system_prompt: settings.system_prompt || undefined,
+    temperature: settings.temperature,
+    top_p: settings.top_p,
+    top_k: settings.top_k,
+    max_tokens: settings.max_tokens,
+    enable_thinking: settings.enable_thinking,
+  };
+}

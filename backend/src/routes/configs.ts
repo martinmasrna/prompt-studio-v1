@@ -2,12 +2,13 @@ import { Router } from 'express';
 import {
   createConfig,
   deleteConfig,
-  getConfig,
+  getConfigById,
   listConfigs,
-  promptExists,
   updateConfig,
   type ConfigValues,
 } from '../repositories/configs';
+import { entityExists } from '../repositories/entities';
+import { ValidationError, numberInRange, uniqueNameError, PARAM_BOUNDS } from '../lib/validation';
 
 const router = Router();
 
@@ -18,22 +19,6 @@ const DEFAULTS: Omit<ConfigValues, 'name'> = {
   max_tokens: 1024,
   enable_thinking: false,
 };
-
-class ValidationError extends Error {}
-
-function validateNumber(
-  value: unknown,
-  field: string,
-  min: number,
-  max: number,
-  integer = false
-): number {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max) {
-    throw new ValidationError(`${field} must be a number between ${min} and ${max}`);
-  }
-  if (integer && !Number.isInteger(value)) throw new ValidationError(`${field} must be an integer`);
-  return value;
-}
 
 function parseValues(body: unknown, partial: boolean): Partial<ConfigValues> {
   if (body === null || typeof body !== 'object' || Array.isArray(body)) {
@@ -48,10 +33,10 @@ function parseValues(body: unknown, partial: boolean): Partial<ConfigValues> {
     }
     result.name = input.name.trim();
   }
-  if ('temperature' in input) result.temperature = validateNumber(input.temperature, 'temperature', 0, 2);
-  if ('top_p' in input) result.top_p = validateNumber(input.top_p, 'top_p', 0, 1);
-  if ('top_k' in input) result.top_k = validateNumber(input.top_k, 'top_k', 1, 200, true);
-  if ('max_tokens' in input) result.max_tokens = validateNumber(input.max_tokens, 'max_tokens', 64, 32768, true);
+  if ('temperature' in input) result.temperature = numberInRange(input.temperature, 'temperature', PARAM_BOUNDS.temperature);
+  if ('top_p' in input) result.top_p = numberInRange(input.top_p, 'top_p', PARAM_BOUNDS.top_p);
+  if ('top_k' in input) result.top_k = numberInRange(input.top_k, 'top_k', PARAM_BOUNDS.top_k);
+  if ('max_tokens' in input) result.max_tokens = numberInRange(input.max_tokens, 'max_tokens', PARAM_BOUNDS.max_tokens);
   if ('enable_thinking' in input) {
     if (typeof input.enable_thinking !== 'boolean') {
       throw new ValidationError('enable_thinking must be a boolean');
@@ -61,14 +46,9 @@ function parseValues(body: unknown, partial: boolean): Partial<ConfigValues> {
   return result;
 }
 
-function isUniqueNameError(error: unknown): boolean {
-  return error instanceof Error
-    && error.message.includes('UNIQUE constraint failed: configs.prompt_id, configs.name');
-}
-
 router.get('/prompts/:promptId/configs', (req, res) => {
   const promptId = Number(req.params.promptId);
-  if (!Number.isInteger(promptId) || !promptExists(promptId)) {
+  if (!Number.isInteger(promptId) || !entityExists('prompts', promptId)) {
     res.status(404).json({ error: 'Prompt not found' });
     return;
   }
@@ -77,7 +57,7 @@ router.get('/prompts/:promptId/configs', (req, res) => {
 
 router.post('/prompts/:promptId/configs', (req, res) => {
   const promptId = Number(req.params.promptId);
-  if (!Number.isInteger(promptId) || !promptExists(promptId)) {
+  if (!Number.isInteger(promptId) || !entityExists('prompts', promptId)) {
     res.status(404).json({ error: 'Prompt not found' });
     return;
   }
@@ -87,13 +67,13 @@ router.post('/prompts/:promptId/configs', (req, res) => {
     res.status(201).json(config);
   } catch (error) {
     if (error instanceof ValidationError) res.status(400).json({ error: error.message });
-    else if (isUniqueNameError(error)) res.status(409).json({ error: 'A config with this name already exists for the prompt' });
+    else if (uniqueNameError(error, 'configs')) res.status(409).json({ error: 'A config with this name already exists for the prompt' });
     else throw error;
   }
 });
 
 router.get('/configs/:id', (req, res) => {
-  const config = getConfig(Number(req.params.id));
+  const config = getConfigById(Number(req.params.id));
   if (!config) { res.status(404).json({ error: 'Config not found' }); return; }
   res.json(config);
 });
@@ -106,7 +86,7 @@ router.patch('/configs/:id', (req, res) => {
     res.json(config);
   } catch (error) {
     if (error instanceof ValidationError) res.status(400).json({ error: error.message });
-    else if (isUniqueNameError(error)) res.status(409).json({ error: 'A config with this name already exists for the prompt' });
+    else if (uniqueNameError(error, 'configs')) res.status(409).json({ error: 'A config with this name already exists for the prompt' });
     else throw error;
   }
 });

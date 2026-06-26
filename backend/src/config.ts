@@ -5,7 +5,7 @@
 //
 // config.json shape:
 //   {
-//     "port": 4701,                     // optional; defaults to 4701
+//     "port": 4747,                     // optional; defaults to 4747
 //     "defaultModel": "qwen-35b",       // optional: id (or label) to start on
 //     "models": [
 //       { "id": "qwen-35b",  "label": "Qwen 35B",  "uri": "http://host-a:8009", "model": "Qwen...gguf" },
@@ -31,7 +31,7 @@ export interface ModelEntry {
 const CONFIG_PATH = process.env.PROMPT_STUDIO_CONFIG_PATH
   ? path.resolve(process.env.PROMPT_STUDIO_CONFIG_PATH)
   : path.join(__dirname, '../config.json');
-const DEFAULT_PORT = 4701;
+const DEFAULT_PORT = 4747;
 
 interface RawConfig {
   port?: number;

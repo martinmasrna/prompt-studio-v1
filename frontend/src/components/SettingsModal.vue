@@ -5,15 +5,14 @@ import {
   availableModels, activeModelId, modelsError,
   showSettings, setActiveModel, loadModels,
 } from '../store/settings';
+import BaseModal from './BaseModal.vue';
 </script>
 
 <template>
-  <Teleport to="body">
-    <div v-if="showSettings" class="overlay" @click.self="showSettings = false">
-      <div class="modal">
-        <h2 class="modal-title">Settings</h2>
+  <BaseModal v-if="showSettings" @close="showSettings = false">
+    <template #title>Settings</template>
 
-        <div class="settings-block">
+    <div class="settings-block">
           <div class="settings-label-row">
             <span class="settings-label">Model</span>
             <button class="link-btn" title="Reload the model list" @click="loadModels">Refresh</button>
@@ -46,12 +45,10 @@ import {
           </div>
         </div>
 
-        <div class="modal-actions">
+        <template #actions>
           <button class="btn-primary" @click="showSettings = false">Done</button>
-        </div>
-      </div>
-    </div>
-  </Teleport>
+        </template>
+  </BaseModal>
 </template>
 
 <style scoped>

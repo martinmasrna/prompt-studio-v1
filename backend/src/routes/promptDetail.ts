@@ -9,8 +9,12 @@
 import { Router } from 'express';
 import db from '../db';
 import { configBelongsToPrompt } from '../repositories/configs';
+import { createVersion } from '../repositories/versions';
 
 const router = Router();
+
+// Columns making up a version's read shape, shared by the two GET handlers.
+const VERSION_COLUMNS = 'id, name, text, note, is_current, system_prompt, default_config_id';
 
 // --- GET /api/prompts/:id ---
 router.get('/:id', (req, res) => {
@@ -24,7 +28,7 @@ router.get('/:id', (req, res) => {
   if (!prompt) { res.status(404).json({ error: 'Prompt not found' }); return; }
 
   const currentVersion = db.get(
-    'SELECT id, name, text, note, is_current, system_prompt, default_config_id FROM versions WHERE prompt_id = ? AND is_current = 1',
+    `SELECT ${VERSION_COLUMNS} FROM versions WHERE prompt_id = ? AND is_current = 1`,
     [id]
   ) as Record<string, unknown> | null;
 
@@ -35,7 +39,7 @@ router.get('/:id', (req, res) => {
 router.get('/:id/versions', (req, res) => {
   const promptId = Number(req.params.id);
   const versions = db.all(
-    'SELECT id, name, text, note, is_current, system_prompt, default_config_id FROM versions WHERE prompt_id = ? ORDER BY id DESC',
+    `SELECT ${VERSION_COLUMNS} FROM versions WHERE prompt_id = ? ORDER BY id DESC`,
     [promptId]
   ) as unknown as object[];
   res.json(versions);
@@ -60,34 +64,23 @@ router.post('/:id/versions', (req, res) => {
     return;
   }
 
-  db.run('BEGIN');
-  try {
-    db.run('UPDATE versions SET is_current = 0 WHERE prompt_id = ?', [promptId]);
-    const result = db.run(
-      'INSERT INTO versions (prompt_id, name, text, note, is_current, system_prompt, default_config_id) VALUES (?, ?, ?, ?, 1, ?, ?)',
-      [promptId, name.trim(), text, note?.trim() || null, system_prompt ?? '', default_config_id ?? null]
-    );
-    db.run('COMMIT');
-    res.status(201).json({ id: Number(result.lastInsertRowid) });
-  } catch (err) {
-    db.run('ROLLBACK');
-    throw err;
-  }
+  const versionId = createVersion(promptId, {
+    name: name.trim(),
+    text,
+    note: note?.trim() || null,
+    system_prompt: system_prompt ?? '',
+    default_config_id: default_config_id ?? null,
+  });
+  res.status(201).json({ id: versionId });
 });
 
 // --- PATCH /api/prompts/:id ---
 router.patch('/:id', (req, res) => {
   const id = Number(req.params.id);
-  const body = req.body as Record<string, unknown>;
+  const { name } = req.body as { name?: unknown };
 
-  const fields: string[] = [];
-  const vals: unknown[] = [];
-
-  if (body.name != null) { fields.push('name = ?'); vals.push(body.name); }
-
-  if (fields.length > 0) {
-    vals.push(id);
-    db.run(`UPDATE prompts SET ${fields.join(', ')} WHERE id = ?`, vals as never);
+  if (typeof name === 'string' && name.trim()) {
+    db.run('UPDATE prompts SET name = ? WHERE id = ?', [name.trim(), id]);
   }
 
   res.json({ ok: true });

@@ -2,11 +2,12 @@
 import { computed, ref, watch } from 'vue';
 import { api, type Comparison, type Evaluation, type Issue } from '../api';
 import { activePromptData, openIssue } from '../store/editor';
-import { renderContent } from '../utils/renderContent';
 import { formatDate, formatRelative } from '../utils/time';
 import ResultActions from '../components/ResultActions.vue';
-import ClampBlock from '../components/ClampBlock.vue';
 import ResultCard from '../components/ResultCard.vue';
+import EvaluationResponse from '../components/EvaluationResponse.vue';
+import FlagIssueModal from '../components/FlagIssueModal.vue';
+import KebabMenu from '../components/KebabMenu.vue';
 
 const evaluations = ref<Evaluation[]>([]);
 const comparisons = ref<Comparison[]>([]);
@@ -89,24 +90,7 @@ async function saveComparisonNote(comparison: Comparison) {
   }
 }
 
-const openMenuId = ref<string | null>(null);
-function toggleMenu(id: string) { openMenuId.value = openMenuId.value === id ? null : id; }
-
-function menuNote(evaluation: Evaluation) {
-  openMenuId.value = null;
-  beginNoteEdit(evaluation);
-}
-
-function menuComparisonNote(comparison: Comparison) {
-  openMenuId.value = null;
-  beginComparisonNoteEdit(comparison);
-}
-
 const flagFor = ref<Evaluation | null>(null);
-const flagTitle = ref('');
-const flagNote = ref('');
-const flagError = ref<string | null>(null);
-const flagSaving = ref(false);
 
 function applyIssue(evaluation: Evaluation, issue: Issue) {
   evaluation.issue = issue;
@@ -117,34 +101,16 @@ function clearIssue(evaluation: Evaluation) {
 }
 
 function startFlag(evaluation: Evaluation) {
-  openMenuId.value = null;
   if (evaluation.issue) {
     openIssue(evaluation.id);
     return;
   }
   flagFor.value = evaluation;
-  flagTitle.value = '';
-  flagNote.value = '';
-  flagError.value = null;
 }
 
-async function submitFlag() {
-  const evaluation = flagFor.value;
-  if (!evaluation || !flagTitle.value.trim() || flagSaving.value) return;
-  flagSaving.value = true;
-  flagError.value = null;
-  try {
-    const issue = await api.issues.createForEvaluation(evaluation.id, {
-      title: flagTitle.value.trim(),
-      note: flagNote.value.trim() || null,
-    });
-    applyIssue(evaluation, issue);
-    flagFor.value = null;
-  } catch (cause) {
-    flagError.value = cause instanceof Error ? cause.message : 'Could not create issue';
-  } finally {
-    flagSaving.value = false;
-  }
+function onFlagCreated(issue: Issue) {
+  if (flagFor.value) applyIssue(flagFor.value, issue);
+  flagFor.value = null;
 }
 
 async function load() {
@@ -169,7 +135,6 @@ async function unflagEvaluation(evaluation: Evaluation) {
 }
 
 async function removeEvaluation(evaluation: Evaluation) {
-  openMenuId.value = null;
   try {
     if (evaluation.issue) {
       if (confirm('Remove the issue flag and keep this saved result?')) {
@@ -188,7 +153,6 @@ async function removeEvaluation(evaluation: Evaluation) {
 }
 
 async function removeComparison(comparison: Comparison) {
-  openMenuId.value = null;
   const flaggedCount = comparison.evaluations.filter(isFlagged).length;
   const message = flaggedCount
     ? `This comparison contains ${flaggedCount} flagged result${flaggedCount === 1 ? '' : 's'}. Delete the comparison and its issue metadata?`
@@ -237,17 +201,11 @@ watch(() => activePromptData.value?.id, load, { immediate: true });
             >Issue</button>
           </template>
           <template #actions>
-            <div class="menu-wrap">
-              <button class="kebab" aria-label="Result actions" @click.stop="toggleMenu(evaluationNoteKey(entry.value.id))">&#8942;</button>
-              <template v-if="openMenuId === evaluationNoteKey(entry.value.id)">
-                <div class="menu-backdrop" @click.stop="openMenuId = null" />
-                <div class="menu" role="menu" @click.stop>
-                  <button role="menuitem" @click="menuNote(entry.value)">{{ entry.value.note ? 'Edit result note' : 'Add result note' }}</button>
-                  <button role="menuitem" @click="startFlag(entry.value)">{{ entry.value.issue ? 'Open issue' : 'Flag as issue' }}</button>
-                  <button role="menuitem" class="danger" @click="removeEvaluation(entry.value)">Delete</button>
-                </div>
-              </template>
-            </div>
+            <KebabMenu label="Result actions">
+              <button role="menuitem" @click="beginNoteEdit(entry.value)">{{ entry.value.note ? 'Edit result note' : 'Add result note' }}</button>
+              <button role="menuitem" @click="startFlag(entry.value)">{{ entry.value.issue ? 'Open issue' : 'Flag as issue' }}</button>
+              <button role="menuitem" class="danger" @click="removeEvaluation(entry.value)">Delete</button>
+            </KebabMenu>
           </template>
           <template #note>
             <div v-if="editingNoteKey === evaluationNoteKey(entry.value.id)" class="note-edit">
@@ -273,16 +231,10 @@ watch(() => activePromptData.value?.id, load, { immediate: true });
         <article v-else class="record-card">
           <div class="record-head">
             <div><span class="badge">A/B</span><strong>Saved comparison</strong></div>
-            <div class="menu-wrap">
-              <button class="kebab" aria-label="Comparison actions" @click="toggleMenu(comparisonNoteKey(entry.value.id))">&#8942;</button>
-              <template v-if="openMenuId === comparisonNoteKey(entry.value.id)">
-                <div class="menu-backdrop" @click="openMenuId = null" />
-                <div class="menu" role="menu">
-                  <button role="menuitem" @click="menuComparisonNote(entry.value)">{{ entry.value.note ? 'Edit note' : 'Add note' }}</button>
-                  <button role="menuitem" class="danger" @click="removeComparison(entry.value)">Delete</button>
-                </div>
-              </template>
-            </div>
+            <KebabMenu label="Comparison actions">
+              <button role="menuitem" @click="beginComparisonNoteEdit(entry.value)">{{ entry.value.note ? 'Edit note' : 'Add note' }}</button>
+              <button role="menuitem" class="danger" @click="removeComparison(entry.value)">Delete</button>
+            </KebabMenu>
           </div>
           <div v-if="editingNoteKey === comparisonNoteKey(entry.value.id)" class="note-edit">
             <input
@@ -312,11 +264,7 @@ watch(() => activePromptData.value?.id, load, { immediate: true });
                 >Issue</button>
                 {{ index === 0 ? 'A' : 'B' }} - {{ evaluation.version_name_snapshot }}
               </h2>
-              <ClampBlock>
-                <div v-if="evaluation.response_text" class="markdown-body resp-md" v-html="renderContent(evaluation.response_text)" />
-                <p v-else-if="evaluation.error_text" class="resp-error">{{ evaluation.error_text }}</p>
-                <p v-else class="resp-empty">(empty response)</p>
-              </ClampBlock>
+              <EvaluationResponse :response-text="evaluation.response_text" :error-text="evaluation.error_text" />
               <details>
                 <summary>Execution snapshot</summary>
                 <pre>{{ evaluation.rendered_prompt_snapshot }}</pre>
@@ -337,28 +285,13 @@ watch(() => activePromptData.value?.id, load, { immediate: true });
       </template>
     </div>
 
-    <Teleport to="body">
-      <div v-if="flagFor" class="overlay" @click.self="flagFor = null" @keydown.esc.window="flagFor = null">
-        <div class="modal">
-          <h2>Flag result as issue</h2>
-          <label>
-            <span>Title</span>
-            <input v-model="flagTitle" autofocus placeholder="What went wrong?" @keydown.enter="submitFlag" />
-          </label>
-          <label>
-            <span>Issue note</span>
-            <textarea v-model="flagNote" rows="4" placeholder="Optional context or expected behavior" />
-          </label>
-          <p v-if="flagError" class="error">{{ flagError }}</p>
-          <div class="modal-actions">
-            <button class="btn" @click="flagFor = null">Cancel</button>
-            <button class="btn primary" :disabled="flagSaving || !flagTitle.trim()" @click="submitFlag">
-              {{ flagSaving ? 'Saving...' : 'Create issue' }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
+    <FlagIssueModal
+      v-if="flagFor"
+      :evaluation="flagFor"
+      :saved-id="flagFor.id"
+      @close="flagFor = null"
+      @created="onFlagCreated"
+    />
   </div>
 </template>
 
@@ -381,18 +314,6 @@ header p { margin-top: 5px; color: var(--text-muted); font-size: 13px; }
 .card-foot { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-top: 14px; }
 .card-foot .date { flex: none; white-space: nowrap; }
 .comparison-foot { justify-content: flex-end; }
-.menu-wrap { position: relative; }
-.kebab { padding: 2px 6px; border: none; border-radius: 4px; background: none; color: var(--text-muted); font-size: 16px; line-height: 1; cursor: pointer; }
-.kebab:hover { background: var(--bg-selected); color: var(--text-primary); }
-.menu-backdrop { position: fixed; inset: 0; z-index: 1100; }
-.menu { position: absolute; top: 100%; right: 0; z-index: 1101; min-width: 150px; margin-top: 4px; padding: 4px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); box-shadow: 0 8px 24px rgba(0,0,0,.14); display: flex; flex-direction: column; }
-.menu button { padding: 7px 10px; border: none; border-radius: 4px; background: none; color: var(--text-secondary); font: inherit; font-size: 12px; text-align: left; cursor: pointer; }
-.menu button:hover { background: var(--bg-selected); color: var(--text-primary); }
-.menu button.danger { color: #b33; }
-.menu button.danger:hover { background: #fdeaea; }
-.resp-md { font-size: 13px; }
-.resp-error { color: #c04040; font-size: 13px; line-height: 1.6; white-space: pre-wrap; }
-.resp-empty { color: var(--text-faint); font-size: 13px; }
 .note { margin: 0 0 16px; padding: 6px 10px; border-left: 3px solid #9a5a20; background: var(--bg-sunken); color: var(--text-secondary); font-size: 12px; line-height: 1.45; cursor: pointer; white-space: pre-wrap; }
 .note:hover { color: var(--text-primary); }
 .note-edit { display: flex; gap: 7px; align-items: center; margin: 0 0 16px; }
@@ -410,12 +331,6 @@ pre { overflow-x: auto; white-space: pre-wrap; word-break: break-word; font-fami
 .side :deep(.result-actions) { margin-top: 10px; }
 .empty { color: var(--text-faint); font-size: 13px; }
 .error { color: #c04040; font-size: 13px; }
-.overlay { position: fixed; inset: 0; z-index: 1200; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.55); }
-.modal { width: min(480px, 90vw); display: flex; flex-direction: column; gap: 14px; padding: 22px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); box-shadow: 0 20px 60px rgba(0,0,0,.25); }
-.modal h2 { font-size: 16px; font-weight: 600; }
-.modal label { display: flex; flex-direction: column; gap: 6px; color: var(--text-secondary); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
-.modal input, .modal textarea { width: 100%; padding: 9px 10px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg); color: var(--text-primary); font: inherit; font-size: 13px; text-transform: none; letter-spacing: 0; resize: vertical; }
-.modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
 
 @media (max-width: 880px) {
   .comparison-grid { grid-template-columns: 1fr; }

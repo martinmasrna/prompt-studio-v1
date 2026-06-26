@@ -7,15 +7,15 @@ import vue from '@vitejs/plugin-vue';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-// Read the backend port from config.json once at startup; fall back to 4701 if
+// Read the backend port from config.json once at startup; fall back to 4747 if
 // the file is missing or has no port. (Change the port there and restart.)
 function backendPort(): number {
   try {
     const configPath = fileURLToPath(new URL('../backend/config.json', import.meta.url));
     const cfg = JSON.parse(readFileSync(configPath, 'utf-8')) as { port?: number };
-    return cfg.port ?? 4701;
+    return cfg.port ?? 4747;
   } catch {
-    return 4701;
+    return 4747;
   }
 }
 
@@ -23,6 +23,9 @@ export default defineConfig({
   plugins: [vue()],
   server: {
     port: 4700,
+    // Fail loudly if 4700 is already taken instead of silently crawling onto the
+    // next port (which is how a stray second dev server once shadowed the backend).
+    strictPort: true,
     proxy: {
       '/api': {
         target: `http://localhost:${backendPort()}`,

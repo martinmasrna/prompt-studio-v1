@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import type { Evaluation } from '../api';
-import { renderContent } from '../utils/renderContent';
 import { tokenizePrompt } from '../utils/variables';
 import { formatDate, formatRelative } from '../utils/time';
 import ClampBlock from './ClampBlock.vue';
+import EvaluationResponse from './EvaluationResponse.vue';
 
 const props = withDefaults(defineProps<{
   evaluation: Evaluation;
@@ -84,11 +84,7 @@ function formatChars(n: number): string {
 
       <section class="io-col">
         <span class="col-label">Response</span>
-        <ClampBlock>
-          <div v-if="evaluation.response_text" class="markdown-body resp-md" v-html="renderContent(evaluation.response_text)" />
-          <p v-else-if="evaluation.error_text" class="resp-error">{{ evaluation.error_text }}</p>
-          <p v-else class="resp-empty">(empty response)</p>
-        </ClampBlock>
+        <EvaluationResponse :response-text="evaluation.response_text" :error-text="evaluation.error_text" />
       </section>
     </div>
 
@@ -132,9 +128,6 @@ function formatChars(n: number): string {
 .var-expand { margin-top: 10px; border: 1px solid var(--border); border-radius: 5px; overflow: hidden; }
 .var-expand-head { padding: 5px 10px; background: var(--bg-sunken); border-bottom: 1px solid var(--border); font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); }
 .var-expand pre { max-height: 240px; overflow: auto; margin: 0; padding: 10px; font-size: 11px; }
-.resp-md { font-size: 13px; }
-.resp-error { color: #c04040; font-size: 13px; line-height: 1.6; white-space: pre-wrap; }
-.resp-empty { color: var(--text-faint); font-size: 13px; }
 details { margin-top: 12px; color: var(--text-secondary); font-size: 12px; }
 summary { cursor: pointer; color: var(--text-muted); }
 dl { display: grid; grid-template-columns: 110px 1fr; gap: 8px 12px; margin-top: 12px; }
