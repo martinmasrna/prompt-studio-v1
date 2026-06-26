@@ -30,7 +30,8 @@ export interface PromptDetail {
   } | null;
 }
 
-// One selectable model in the catalog. `id` (== label) is what runs send back.
+// One selectable model in the catalog. `id` is the stable identifier runs send
+// back (it defaults to `label` on the backend but can be set independently).
 export interface ModelOption {
   id: string;
   label: string;

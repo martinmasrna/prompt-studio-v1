@@ -3,6 +3,7 @@ import { computed, ref } from 'vue';
 import type { Evaluation } from '../api';
 import { renderContent } from '../utils/renderContent';
 import { tokenizePrompt } from '../utils/variables';
+import { formatDate, formatRelative } from '../utils/time';
 import ClampBlock from './ClampBlock.vue';
 
 const props = withDefaults(defineProps<{
@@ -40,24 +41,6 @@ function formatChars(n: number): string {
   return `${k >= 10 ? Math.round(k) : k.toFixed(1)}k chars`;
 }
 
-function formatDate(seconds: number) {
-  return new Date(seconds * 1000).toLocaleString();
-}
-
-const relativeTimeFormat = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
-const RELATIVE_UNITS: Array<[Intl.RelativeTimeFormatUnit, number]> = [
-  ['year', 31536000], ['month', 2592000], ['day', 86400],
-  ['hour', 3600], ['minute', 60], ['second', 1],
-];
-function formatRelative(seconds: number) {
-  const delta = seconds - Date.now() / 1000;
-  for (const [unit, unitSeconds] of RELATIVE_UNITS) {
-    if (Math.abs(delta) >= unitSeconds || unit === 'second') {
-      return relativeTimeFormat.format(Math.round(delta / unitSeconds), unit);
-    }
-  }
-  return relativeTimeFormat.format(0, 'second');
-}
 </script>
 
 <template>

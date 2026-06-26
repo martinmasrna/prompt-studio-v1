@@ -1,14 +1,16 @@
 {
-  "_comment": "Copy this file to config.json and fill it in. config.json is git-ignored, so your server addresses stay private. 'label' is shown in the Settings picker and must be unique; 'defaultModel' (optional) is the label to start on. 'port' (optional, default 4701) is the backend port; the frontend dev proxy reads it from here automatically — restart the app after changing it.",
+  "_comment": "Copy this file to config.json and fill it in. config.json is git-ignored, so your server addresses stay private. 'id' is a stable identifier (optional; defaults to 'label') that saved results and the user's model selection reference — keep it fixed so renaming 'label' never breaks history. 'label' is the renameable display name shown in the Settings picker. 'defaultModel' (optional) is the id to start on (a label is also accepted for older configs). 'port' (optional, default 4701) is the backend port; the frontend dev proxy reads it from here automatically — restart the app after changing it.",
   "port": 4701,
-  "defaultModel": "Qwen 35B",
+  "defaultModel": "qwen-35b",
   "models": [
     {
+      "id": "qwen-35b",
       "label": "Qwen 35B",
       "uri": "http://host-a:8009",
       "model": "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf"
     },
     {
+      "id": "gemma-26b",
       "label": "Gemma 26B",
       "uri": "http://host-b:8010",
       "model": "gemma-4-26B-A4B-it-UD-Q4_K_M.gguf"

@@ -143,7 +143,7 @@ async function menuRemove() {
         >
           <span class="entity-row-main">
             <span class="entity-row-title">{{ testCase.name }}</span>
-            <span class="entity-row-note">{{ testCase.description || 'No description' }}</span>
+            <span v-if="testCase.description" class="entity-row-note">{{ testCase.description }}</span>
           </span>
           <span class="entity-row-actions">
             <button

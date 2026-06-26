@@ -114,7 +114,7 @@ issues (
 
 ### Evaluation features
 
-- [ ] Give configured models explicit stable IDs; retain label fallback during config migration.
+- [x] Give configured models explicit stable IDs; retain label fallback during config migration.
 - [x] Persist selected Sandbox and A/B-side results as immutable evaluations.
 - [x] Capture execution context when the run starts, before settings can change.
 - [x] Persist A/B runs as two evaluations in one comparison batch without duplicating saved sides.

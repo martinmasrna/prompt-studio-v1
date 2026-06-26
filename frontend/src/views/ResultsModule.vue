@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue';
 import { api, type Comparison, type Evaluation, type Issue } from '../api';
 import { activePromptData, openIssue } from '../store/editor';
 import { renderContent } from '../utils/renderContent';
+import { formatDate, formatRelative } from '../utils/time';
 import ResultActions from '../components/ResultActions.vue';
 import ClampBlock from '../components/ClampBlock.vue';
 import ResultCard from '../components/ResultCard.vue';
@@ -41,25 +42,6 @@ const visibleTimeline = computed(() => timeline.value.filter(entry => {
   const fromIssue = entry.kind === 'evaluation' ? isFlagged(entry.value) : comparisonHasIssue(entry.value);
   return filter.value === 'issues' ? fromIssue : !fromIssue;
 }));
-
-function formatDate(seconds: number) {
-  return new Date(seconds * 1000).toLocaleString();
-}
-
-const relativeTimeFormat = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
-const RELATIVE_UNITS: Array<[Intl.RelativeTimeFormatUnit, number]> = [
-  ['year', 31536000], ['month', 2592000], ['day', 86400],
-  ['hour', 3600], ['minute', 60], ['second', 1],
-];
-function formatRelative(seconds: number) {
-  const delta = seconds - Date.now() / 1000;
-  for (const [unit, unitSeconds] of RELATIVE_UNITS) {
-    if (Math.abs(delta) >= unitSeconds || unit === 'second') {
-      return relativeTimeFormat.format(Math.round(delta / unitSeconds), unit);
-    }
-  }
-  return relativeTimeFormat.format(0, 'second');
-}
 
 const evaluationNoteKey = (id: number) => `evaluation-${id}`;
 const comparisonNoteKey = (id: number) => `comparison-${id}`;
