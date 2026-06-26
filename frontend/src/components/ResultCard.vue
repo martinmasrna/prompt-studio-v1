@@ -29,12 +29,6 @@ function toggleVar(name: string) {
   expandedVars.value = next;
 }
 
-const expandedVarsFor = computed(() =>
-  Object.entries(props.evaluation.variables)
-    .filter(([name, value]) => value && isVarExpanded(name))
-    .map(([name, value]) => ({ name, value }))
-);
-
 function formatChars(n: number): string {
   if (n < 1000) return `${n} chars`;
   const k = n / 1000;
@@ -67,17 +61,17 @@ function formatChars(n: number): string {
               <span v-if="seg.type === 'text'" class="tpl-text">{{ seg.value }}</span>
               <span v-else-if="seg.value === null" class="var-chip empty">{{ seg.name }} - empty</span>
               <span v-else-if="isShortValue(seg.value)" class="var-inline" :title="seg.name">{{ seg.value }}</span>
-              <button
-                v-else
-                class="var-chip"
-                :class="{ active: isVarExpanded(seg.name) }"
-                @click.stop="toggleVar(seg.name)"
-              >{{ seg.name }} - {{ formatChars(seg.value.length) }} {{ isVarExpanded(seg.name) ? 'v' : '>' }}</button>
+              <template v-else>
+                <button
+                  class="var-chip"
+                  :class="{ active: isVarExpanded(seg.name) }"
+                  @click.stop="toggleVar(seg.name)"
+                >{{ seg.name }} - {{ formatChars(seg.value.length) }} {{ isVarExpanded(seg.name) ? 'v' : '>' }}</button>
+                <span v-if="isVarExpanded(seg.name)" class="var-expand">
+                  <pre>{{ seg.value }}</pre>
+                </span>
+              </template>
             </template>
-          </div>
-          <div v-for="v in expandedVarsFor" :key="v.name" class="var-expand">
-            <div class="var-expand-head">{{ v.name }}</div>
-            <pre>{{ v.value }}</pre>
           </div>
         </ClampBlock>
       </section>
@@ -125,9 +119,8 @@ function formatChars(n: number): string {
 .var-chip:hover { border-color: #aaa; color: var(--text-primary); }
 .var-chip.active { border-color: #9a5a20; color: #9a5a20; background: #fff2d9; }
 .var-chip.empty { cursor: default; font-style: italic; color: var(--text-muted); background: none; }
-.var-expand { margin-top: 10px; border: 1px solid var(--border); border-radius: 5px; overflow: hidden; }
-.var-expand-head { padding: 5px 10px; background: var(--bg-sunken); border-bottom: 1px solid var(--border); font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); }
-.var-expand pre { max-height: 240px; overflow: auto; margin: 0; padding: 10px; font-size: 11px; }
+.var-expand { display: block; margin: 4px 0 0; border: 1px solid var(--border); border-radius: 5px; overflow: hidden; }
+.var-expand pre { max-height: 240px; overflow: auto; margin: 0; padding: 10px; font-size: 11px; line-height: 1.5; }
 details { margin-top: 12px; color: var(--text-secondary); font-size: 12px; }
 summary { cursor: pointer; color: var(--text-muted); }
 dl { display: grid; grid-template-columns: 110px 1fr; gap: 8px 12px; margin-top: 12px; }

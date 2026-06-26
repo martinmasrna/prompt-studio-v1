@@ -30,7 +30,8 @@ const open = ref(false);
 <style scoped>
 .menu-wrap { position: relative; }
 .kebab { padding: 2px 6px; border: none; border-radius: 4px; background: none; color: var(--text-muted); font-size: 16px; line-height: 1; cursor: pointer; }
-.kebab:hover, .kebab[aria-expanded="true"] { background: var(--bg-selected); color: var(--text-primary); }
+.kebab:hover { color: var(--text-primary); }
+.kebab[aria-expanded="true"] { background: var(--bg-selected); color: var(--text-primary); }
 .menu-backdrop { position: fixed; inset: 0; z-index: 1100; }
 .menu {
   position: absolute;

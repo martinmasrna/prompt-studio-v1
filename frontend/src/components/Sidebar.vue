@@ -8,6 +8,7 @@ import { activeModule, type ModuleTab } from '../store/editor';
 import { hrefFor } from '../store/router';
 import { showSettings, activeModelLabel } from '../store/settings';
 import BaseModal from './BaseModal.vue';
+import KebabMenu from './KebabMenu.vue';
 
 const { prompts, selectedPromptId } = useAppState();
 
@@ -58,6 +59,34 @@ async function createPrompt() {
     alert(e instanceof Error ? e.message : 'Could not create prompt');
   } finally {
     creating.value = false;
+  }
+}
+
+// ── Rename a prompt ──────────────────────────────────────────────────────────
+const showRenameModal = ref(false);
+const renameId        = ref<number | null>(null);
+const renameName      = ref('');
+const renaming        = ref(false);
+
+function openRenameModal(id: number, name: string) {
+  renameId.value = id;
+  renameName.value = name;
+  showRenameModal.value = true;
+}
+
+async function renamePrompt() {
+  const id = renameId.value;
+  const name = renameName.value.trim();
+  if (renaming.value || id === null || !name) return;
+  renaming.value = true;
+  try {
+    await api.prompts.patch(id, { name });
+    prompts.value = await api.prompts.list();
+    showRenameModal.value = false;
+  } catch (e: unknown) {
+    alert(e instanceof Error ? e.message : 'Could not rename prompt');
+  } finally {
+    renaming.value = false;
   }
 }
 
@@ -148,18 +177,12 @@ async function deletePrompt(id: number, name: string) {
         @click="selectedPromptId = prompt.id"
       >
         <span class="prompt-item-name">{{ prompt.name }}</span>
-        <button
-          class="prompt-delete"
-          title="Delete prompt"
-          @click.stop="deletePrompt(prompt.id, prompt.name)"
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="3 6 5 6 21 6" />
-            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-            <path d="M10 11v6M14 11v6" />
-            <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-          </svg>
-        </button>
+        <span class="prompt-actions" @click.stop>
+          <KebabMenu label="Prompt actions">
+            <button role="menuitem" @click="openRenameModal(prompt.id, prompt.name)">Rename</button>
+            <button role="menuitem" class="danger" @click="deletePrompt(prompt.id, prompt.name)">Delete</button>
+          </KebabMenu>
+        </span>
       </div>
     </nav>
 
@@ -201,6 +224,27 @@ async function deletePrompt(id: number, name: string) {
       <button class="btn-ghost" @click="showNewModal = false">Cancel</button>
       <button class="btn-primary" :disabled="creating || !newName.trim()" @click="createPrompt">
         {{ creating ? 'Creating…' : 'Create' }}
+      </button>
+    </template>
+  </BaseModal>
+
+  <!-- Rename-prompt dialog -->
+  <BaseModal v-if="showRenameModal" @close="showRenameModal = false">
+    <template #title>Rename prompt</template>
+
+    <input
+      v-model="renameName"
+      class="modal-input"
+      placeholder="Prompt name"
+      @keydown.enter="renamePrompt"
+      @keydown.esc="showRenameModal = false"
+      autofocus
+    />
+
+    <template #actions>
+      <button class="btn-ghost" @click="showRenameModal = false">Cancel</button>
+      <button class="btn-primary" :disabled="renaming || !renameName.trim()" @click="renamePrompt">
+        {{ renaming ? 'Renaming…' : 'Rename' }}
       </button>
     </template>
   </BaseModal>
@@ -397,23 +441,16 @@ async function deletePrompt(id: number, name: string) {
   text-overflow: ellipsis;
 }
 
-/* Delete button — revealed on row hover */
-.prompt-delete {
+/* Kebab actions — revealed on row hover (and kept visible for the selected row) */
+.prompt-actions {
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  justify-content: center;
-  padding: 2px;
-  background: none;
-  border: none;
-  border-radius: 5px;
-  color: var(--text-muted);
-  cursor: pointer;
   opacity: 0;
-  transition: opacity 0.1s, color 0.1s;
+  transition: opacity 0.1s;
 }
-.prompt-item-root:hover .prompt-delete { opacity: 1; }
-.prompt-delete:hover { color: #c04040; }
+.prompt-item-root:hover .prompt-actions,
+.prompt-item-root.selected .prompt-actions { opacity: 1; }
 
 /* ── Settings footer ── */
 .sidebar-footer {
