@@ -235,7 +235,7 @@ async function deleteVersion(versionId: number, name: string) {
             @click="versionsOpen = !versionsOpen; activeVersionMenuOpen = false"
           >
             <span class="entity-picker-label">
-              {{ activeVersion?.name ?? 'No version' }}{{ activeVersion?.is_current ? ' · current' : '' }}
+              {{ activeVersion?.name ?? 'No version' }}{{ activeVersion?.is_current ? ' ★' : '' }}
             </span>
             </button>
 

@@ -267,7 +267,7 @@ watch([issues, activeIssueEvaluationId], async () => {
           <select v-model="resolvedVersionId">
             <option value="">No linked version</option>
             <option v-for="version in promptVersions" :key="version.id" :value="String(version.id)">
-              {{ version.name }}{{ version.is_current ? ' - current' : '' }}
+              {{ version.name }}{{ version.is_current ? ' ★' : '' }}
             </option>
           </select>
         </label>
