@@ -5,3 +5,4 @@ config.json
 *.db-shm
 *.db-wal
 vite-dev.*.log
+temp/
