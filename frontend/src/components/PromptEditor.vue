@@ -53,24 +53,28 @@ const variablePlugin = ViewPlugin.fromClass(
   { decorations: v => v.decorations }
 );
 
-// Visual match for the old .prompt-textarea so the swap is seamless.
+// Soft-surfaces: the editor is an inset, sunken field (no outline border) that
+// sits "into" the prompt card. Focus shows the slate accent, not a grey border.
 const theme = EditorView.theme({
   '&': {
-    backgroundColor: 'var(--bg)',
-    color: 'var(--text-primary)',
-    border: '1px solid var(--border)',
-    borderRadius: '6px',
+    backgroundColor: 'var(--bg-sunken)',
+    color: 'var(--text-secondary)',
+    border: '1px solid transparent',
+    borderRadius: 'var(--r-inner)',
     fontSize: '12.5px',
   },
   '&.cm-editor': { height: '100%' },
-  '&.cm-focused': { outline: 'none', borderColor: '#aaa' },
-  '.cm-scroller': { fontFamily: 'var(--font-mono)', lineHeight: '1.58', overflow: 'auto' },
-  '.cm-content': { padding: '15px 18px' },
+  '&.cm-focused': { outline: 'none', borderColor: 'var(--accent)', boxShadow: '0 0 0 2px var(--accent-soft)' },
+  '.cm-scroller': { fontFamily: 'var(--font-mono)', lineHeight: '1.85', overflow: 'auto' },
+  '.cm-content': { padding: '16px 18px' },
   '.cm-cursor': { borderLeftColor: 'var(--text-primary)' },
+  // {{variable}} chips — the single sanctioned accent inside the prompt text.
   '.cm-variable': {
-    color: '#2c6e49',
-    backgroundColor: 'rgba(44, 110, 73, 0.09)',
-    borderRadius: '3px',
+    color: 'var(--accent-ink)',
+    backgroundColor: 'var(--accent-soft)',
+    fontWeight: '650',
+    borderRadius: '4px',
+    padding: '0 3px',
   },
 });
 

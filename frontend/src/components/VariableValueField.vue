@@ -182,7 +182,7 @@ onBeforeUnmount(() => {
   color: var(--text-faint);
   font-size: 11px;
 }
-.variable-preview.empty { color: #b15c5c; }
+.variable-preview.empty { color: var(--danger-ink); }
 
 .variable-editor {
   display: flex;

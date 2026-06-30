@@ -64,11 +64,12 @@ async function create() {
 
 <style scoped>
 label { display: flex; flex-direction: column; gap: 6px; color: var(--text-secondary); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
-input, textarea { width: 100%; padding: 9px 10px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg); color: var(--text-primary); font: inherit; font-size: 13px; text-transform: none; letter-spacing: 0; }
+input, textarea { width: 100%; padding: 9px 10px; border: 1px solid transparent; border-radius: var(--r-ctl); background: var(--bg-sunken); color: var(--text-primary); font: inherit; font-size: 13px; text-transform: none; letter-spacing: 0; }
+input:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
 textarea { resize: vertical; }
-.action-error { margin-top: 6px; color: #c04040; font-size: 11px; }
-.result-btn { padding: 4px 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text-muted); font: inherit; font-size: 11px; cursor: pointer; }
-.result-btn:hover:not(:disabled) { color: var(--text-primary); border-color: #aaa; }
+.action-error { margin-top: 6px; color: var(--danger-ink); font-size: 11px; }
+.result-btn { padding: 4px 10px; background: var(--card); border: 1px solid var(--border); border-radius: var(--r-ctl); color: var(--text-muted); font: inherit; font-size: 11px; cursor: pointer; }
+.result-btn:hover:not(:disabled) { color: var(--text-primary); border-color: var(--border-strong, #aaa); }
 .result-btn:disabled { opacity: .5; cursor: default; }
 .result-btn.primary { background: #1a1a1a; color: #fff; border-color: #1a1a1a; }
 </style>

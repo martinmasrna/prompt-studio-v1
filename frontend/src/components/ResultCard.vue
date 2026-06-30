@@ -102,7 +102,7 @@ function formatChars(n: number): string {
 </template>
 
 <style scoped>
-.record-card { padding: 18px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); }
+.record-card { padding: 18px; border-radius: var(--r); background: var(--card); box-shadow: var(--shadow); }
 .record-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 14px; }
 .record-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .record-title strong { min-width: 0; overflow-wrap: anywhere; }
@@ -115,11 +115,11 @@ function formatChars(n: number): string {
 .col-label { display: block; margin-bottom: 8px; font-size: 10px; font-weight: 600; letter-spacing: .09em; text-transform: uppercase; color: var(--text-faint); }
 .prompt-body { font-family: var(--font-mono); font-size: 12px; line-height: 1.7; color: var(--text-secondary); white-space: pre-wrap; word-break: break-word; }
 .var-inline { background: var(--bg-selected); border-bottom: 1px dotted var(--text-muted); border-radius: 2px; padding: 0 3px; color: var(--text-primary); }
-.var-chip { display: inline-flex; align-items: baseline; gap: 3px; padding: 1px 8px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-sunken); color: var(--text-secondary); font-family: var(--font-sans); font-size: 11px; cursor: pointer; vertical-align: baseline; white-space: nowrap; }
-.var-chip:hover { border-color: #aaa; color: var(--text-primary); }
-.var-chip.active { border-color: #9a5a20; color: #9a5a20; background: #fff2d9; }
+.var-chip { display: inline-flex; align-items: baseline; gap: 3px; padding: 1px 8px; border: 1px solid transparent; border-radius: 10px; background: var(--bg-sunken); color: var(--text-secondary); font-family: var(--font-sans); font-size: 11px; cursor: pointer; vertical-align: baseline; white-space: nowrap; }
+.var-chip:hover { border-color: var(--border); color: var(--text-primary); }
+.var-chip.active { border-color: transparent; color: var(--accent-ink); background: var(--accent-soft); }
 .var-chip.empty { cursor: default; font-style: italic; color: var(--text-muted); background: none; }
-.var-expand { display: block; margin: 4px 0 0; border: 1px solid var(--border); border-radius: 5px; overflow: hidden; }
+.var-expand { display: block; margin: 4px 0 0; border: 1px solid var(--border); border-radius: var(--r-ctl); overflow: hidden; }
 .var-expand pre { max-height: 240px; overflow: auto; margin: 0; padding: 10px; font-size: 11px; line-height: 1.5; }
 details { margin-top: 12px; color: var(--text-secondary); font-size: 12px; }
 summary { cursor: pointer; color: var(--text-muted); }

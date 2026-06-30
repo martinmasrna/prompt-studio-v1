@@ -58,20 +58,21 @@ defineProps<{ fullWidthToggle?: boolean }>();
 }
 .param-value { font-weight: 400; color: var(--text-secondary); font-size: 10px; text-transform: none; letter-spacing: 0; }
 
-.slider { width: 100%; accent-color: #888; cursor: pointer; }
+.slider { width: 100%; accent-color: var(--accent); cursor: pointer; }
 
+/* Sunken numeric field — matches the inset elevation language. */
 .num-input {
   width: 100%;
   min-height: 34px;
-  padding: 6px 9px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 5px;
+  padding: 8px 11px;
+  background: var(--bg-sunken);
+  border: 1px solid transparent;
+  border-radius: var(--r-ctl);
   color: var(--text-primary);
-  font-family: inherit;
-  font-size: 13px;
+  font-family: var(--font-mono);
+  font-size: 12px;
 }
-.num-input:focus { outline: none; border-color: #aaa; }
+.num-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
 
 .toggle-row { display: flex; align-items: center; gap: 10px; align-self: flex-start; margin-top: 16px; cursor: pointer; }
 .toggle-row.full-width { width: 100%; justify-content: space-between; }
@@ -89,7 +90,7 @@ defineProps<{ fullWidthToggle?: boolean }>();
   transition: background 0.18s;
   flex-shrink: 0;
 }
-.toggle-switch.on { background: #1a1a1a; }
+.toggle-switch.on { background: var(--accent); }
 .toggle-thumb {
   position: absolute;
   top: 2px;

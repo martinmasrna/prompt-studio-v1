@@ -18,6 +18,6 @@ defineProps<{ responseText: string | null; errorText: string | null }>();
 
 <style scoped>
 .resp-md { font-size: 13px; }
-.resp-error { color: #c04040; font-size: 13px; line-height: 1.6; white-space: pre-wrap; }
+.resp-error { color: var(--danger-ink); font-size: 13px; line-height: 1.6; white-space: pre-wrap; }
 .resp-empty { color: var(--text-faint); font-size: 13px; }
 </style>

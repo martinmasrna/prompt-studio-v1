@@ -141,5 +141,5 @@ async function menuRemove() { menuOpen.value = false; await remove(); }
 </template>
 
 <style scoped>
-.cc-error { color: #c04040; font-size: 11px; width: 100%; text-align: right; margin: 2px 0 0; }
+.cc-error { color: var(--danger-ink); font-size: 11px; width: 100%; text-align: right; margin: 2px 0 0; }
 </style>

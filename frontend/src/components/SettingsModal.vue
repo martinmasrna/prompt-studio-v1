@@ -81,7 +81,7 @@ import BaseModal from './BaseModal.vue';
 
 .settings-hint  { font-size: 12px; color: var(--text-muted); line-height: 1.5; }
 .settings-hint code { font-family: var(--font-mono); font-size: 11px; }
-.settings-error { font-size: 12px; color: #c04040; line-height: 1.5; }
+.settings-error { font-size: 12px; color: var(--danger-ink); line-height: 1.5; }
 
 .model-list {
   display: flex;

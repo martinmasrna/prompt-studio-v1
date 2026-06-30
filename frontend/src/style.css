@@ -17,8 +17,53 @@
   --text-faint:    #a6a6a6;
   --text-white:    #1a1a1a;
 
-  --font-sans: system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --font-mono: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+
+  /* ── Converged "soft-surfaces" design (Overview redesign) ──────────────────
+     Hierarchy comes from elevation (white cards + soft shadow on a neutral-soft
+     canvas), not hairline borders. One disciplined accent: Slate Blue. */
+
+  /* accent system — only --accent ever needs to change to re-theme */
+  --accent:        #4f6b9c;                                      /* Slate Blue */
+  --accent-ink:    color-mix(in srgb, var(--accent), #000 24%);  /* hover / text-on-tint */
+  --accent-soft:   color-mix(in srgb, var(--accent) 13%, #fff);  /* active-nav bg, var chips */
+
+  /* surface system */
+  --canvas:        #f3f3f2;   /* app background (neutral-soft) */
+  --card:          #ffffff;   /* elevated panels */
+  --shadow:        0 1px 2px rgba(30, 30, 30, 0.05), 0 4px 14px rgba(30, 30, 30, 0.07);
+  --shadow-sm:     0 1px 2px rgba(30, 30, 30, 0.06);
+
+  /* radii scale: cards / inner blocks / controls */
+  --r:             14px;
+  --r-inner:       10px;
+  --r-ctl:         8px;
+
+  /* output reading face — sans for now, isolated so it can change independently */
+  --font-read:     var(--font-sans);
+
+  /* ── Semantic ramp ─────────────────────────────────────────────────────────
+     Used ONLY where state must read at a glance: statuses, errors, success
+     confirmations, and the AI (Prompt Doctor) affordance. One hue per role;
+     `-ink` for text (on white or on the soft tint), `-soft` for tinted fills.
+     Derived from a single base like --accent, so each role re-themes from one
+     value. This consolidates the formerly-scattered ad-hoc reds/ambers/greens. */
+  --success: #3f8f63;
+  --success-ink:  color-mix(in srgb, var(--success), #000 26%);
+  --success-soft: color-mix(in srgb, var(--success) 14%, #fff);
+
+  --danger:  #c2554b;
+  --danger-ink:   color-mix(in srgb, var(--danger), #000 20%);
+  --danger-soft:  color-mix(in srgb, var(--danger) 12%, #fff);
+
+  --warning: #b9822f;   /* open issues, unsaved/dirty, flags, pinned notes */
+  --warning-ink:  color-mix(in srgb, var(--warning), #000 30%);
+  --warning-soft: color-mix(in srgb, var(--warning) 16%, #fff);
+
+  --ai:      #6f5bb0;    /* Prompt Doctor / "diagnosed" / AI affordances */
+  --ai-ink:       color-mix(in srgb, var(--ai), #000 20%);
+  --ai-soft:      color-mix(in srgb, var(--ai) 14%, #fff);
 }
 
 body {
@@ -81,16 +126,16 @@ button {
   text-transform: uppercase;
   letter-spacing: 0.02em;
 }
-.workspace-status.dirty { color: #9a6a18; }
+.workspace-status.dirty { color: var(--warning-ink); }
 
 .workspace-status-dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #4f7a52;
+  background: var(--success);
   flex: 0 0 auto;
 }
-.workspace-status.dirty .workspace-status-dot { background: #d6a13a; }
+.workspace-status.dirty .workspace-status-dot { background: var(--warning); }
 
 .workspace-switcher {
   display: inline-flex;
@@ -150,6 +195,7 @@ button {
   display: flex;
   height: 100vh;
   overflow: hidden;
+  background: var(--canvas);
 }
 
 /* Rendered model output (Markdown + KaTeX). Shared by Sandbox and Results. */
@@ -451,7 +497,7 @@ button {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
-.entity-menu button.danger { color: #b33; }
+.entity-menu button.danger { color: var(--danger-ink); }
 .entity-menu button:disabled { opacity: 0.45; cursor: default; }
 
 .entity-save {
@@ -478,7 +524,7 @@ button {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #d6a13a;
+  background: var(--warning);
   flex-shrink: 0;
 }
 

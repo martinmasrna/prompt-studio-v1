@@ -235,7 +235,7 @@ async function deleteVersion(versionId: number, name: string) {
             @click="versionsOpen = !versionsOpen; activeVersionMenuOpen = false"
           >
             <span class="entity-picker-label">
-              {{ activeVersion?.name ?? 'No version' }}{{ activeVersion?.is_current ? ' ★' : '' }}
+              {{ activeVersion?.name ?? 'No version' }}<span v-if="activeVersion?.is_current" class="version-star"> ★</span>
             </span>
             </button>
 
@@ -376,21 +376,35 @@ async function deleteVersion(versionId: number, name: string) {
 
 <style scoped>
 .left-panel {
+  /* Card padding scales with viewport so it doesn't crowd on smaller screens.
+     --pc-pad-x is reused by the bleeding action bar below. */
+  --pc-pad-x: clamp(18px, 1.9vw, 28px);
   display: flex;
   flex-direction: column;
   gap: 20px;
-  padding: 28px 36px 0;
+  padding: clamp(18px, 1.8vw, 24px) var(--pc-pad-x) 0;
   overflow: hidden;
   height: 100%;
 }
 
+/* Larger, tighter prompt title to anchor the card (mock spec). */
+.left-panel :deep(.workspace-title-input),
+.left-panel :deep(.workspace-title) {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
 .section-label {
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
   color: var(--text-muted);
 }
+
+/* The version ★ is one of the few sanctioned accent touches. */
+.version-star { color: var(--accent); }
 
 /* ── Prompt text ── */
 /* The editor is the one flexible region: it fills the space left over after the
@@ -400,24 +414,26 @@ async function deleteVersion(versionId: number, name: string) {
 
 /* ── System prompt ── */
 .system-prompt-section { display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; }
+/* Inset, sunken field — elevation language: the field sits "into" the card. */
 .system-prompt-input {
   width: 100%;
-  background: var(--bg);
-  border: 1px solid #ececec;
-  border-radius: 6px;
+  background: var(--bg-sunken);
+  border: 1px solid transparent;
+  border-radius: var(--r-inner);
   color: var(--text-primary);
   font-family: var(--font-mono);
   font-size: 12.5px;
   line-height: 1.6;
   min-height: 64px;
   max-height: 200px;
-  padding: 10px 12px;
+  padding: 13px 15px;
   resize: vertical;
   overflow: auto;
   transition: border-color 0.12s, box-shadow 0.12s;
 }
-.system-prompt-input:hover { border-color: #dddddd; }
-.system-prompt-input:focus { outline: none; border-color: #b8b8b8; box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.035); }
+.system-prompt-input::placeholder { color: var(--text-faint); }
+.system-prompt-input:hover { border-color: var(--border); }
+.system-prompt-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
 
 .prompt-text-header {
   display: flex;
@@ -433,6 +449,18 @@ async function deleteVersion(versionId: number, name: string) {
   width: 280px;
   max-width: min(36vw, 320px);
   grid-template-columns: minmax(0, 1fr) 24px 24px;
+}
+
+/* Sunken pill (soft-surfaces): inset into the card rather than outlined. */
+.left-panel :deep(.versions-menu) {
+  background: var(--bg-sunken);
+  border-color: transparent;
+  border-radius: var(--r-inner);
+}
+.left-panel :deep(.versions-menu:hover),
+.left-panel :deep(.versions-menu.open),
+.left-panel :deep(.versions-menu:focus-within) {
+  border-color: var(--border);
 }
 
 .version-picker {
@@ -480,25 +508,32 @@ async function deleteVersion(versionId: number, name: string) {
   gap: 8px;
   position: sticky;
   bottom: 0;
-  margin: 0 -36px;
-  padding: 7px 36px 18px;
-  background: var(--bg);
+  margin: 0 calc(-1 * var(--pc-pad-x));
+  padding: 12px var(--pc-pad-x) 18px;
+  background: var(--card);
 }
 
 .btn-action-primary {
-  min-height: 34px;
-  padding: 6px 14px;
+  min-height: 36px;
+  padding: 9px 16px;
   background: #1a1a1a;
-  border: none;
-  border-radius: 5px;
+  border: 1px solid #1a1a1a;
+  border-radius: var(--r-inner);
   color: #ffffff;
   font-size: 13px;
   font-family: inherit;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
 }
-.btn-action-primary:hover:not(:disabled) { background: #333; }
-.btn-action-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-action-primary:hover:not(:disabled) { background: #333; border-color: #333; }
+/* Disabled (no unsaved changes) = quiet bordered placeholder, per mock. */
+.btn-action-primary:disabled {
+  background: var(--card);
+  border-color: var(--border);
+  color: var(--text-faint);
+  cursor: not-allowed;
+}
 
 @media (max-width: 760px) {
   .version-picker {

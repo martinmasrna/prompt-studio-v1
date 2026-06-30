@@ -122,10 +122,10 @@ function onIssueCreated(issue: Issue) {
 }
 .icon-btn:hover:not(:disabled) { color: var(--text-primary); background: var(--bg-hover); }
 .icon-btn:disabled { cursor: default; }
-.icon-btn.done { color: #4f7a52; }
-.icon-btn.saved { color: #4f7a52; }
-/* Flag keeps an amber tint at rest so it reads as the heavier action. */
-.icon-btn.issue { color: #b88a55; }
-.icon-btn.issue:hover:not(:disabled) { color: #9a5a20; }
-.action-error { margin-top: 6px; color: #c04040; font-size: 11px; }
+.icon-btn.done { color: var(--success); }
+.icon-btn.saved { color: var(--success); }
+/* Flag keeps a warning tint at rest so it reads as the heavier action. */
+.icon-btn.issue { color: color-mix(in srgb, var(--warning), var(--text-faint) 35%); }
+.icon-btn.issue:hover:not(:disabled) { color: var(--warning-ink); }
+.action-error { margin-top: 6px; color: var(--danger-ink); font-size: 11px; }
 </style>

@@ -47,7 +47,11 @@
       "Bash(node inspect.mjs)",
       "Bash(cp data/prompt-studio.db \"data/prompt-studio.db.bak-investigation\")",
       "Bash(node -e \"const p=require\\('./package.json'\\); console.log\\(JSON.stringify\\(p.scripts,null,2\\)\\)\")",
-      "Bash(node recover.mjs)"
+      "Bash(node recover.mjs)",
+      "Bash(mkdir -p src/assets/fonts)",
+      "Bash(curl -sL -o /dev/null -w \"inter:%{http_code} %{size_download}\\\\n\" \"https://github.com/rsms/inter/raw/master/docs/font-files/InterVariable.woff2\")",
+      "Bash(curl -sL -o /dev/null -w \"jb:%{http_code} %{size_download}\\\\n\" \"https://github.com/JetBrains/JetBrainsMono/raw/master/fonts/webfonts/JetBrainsMono-Regular.woff2\")",
+      "PowerShell(git add *)"
     ]
   }
 }

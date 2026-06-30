@@ -50,6 +50,6 @@ const open = ref(false);
 }
 .menu :slotted(button) { width: 100%; padding: 7px 10px; border: none; border-radius: 4px; background: none; color: var(--text-secondary); font: inherit; font-size: 12px; text-align: left; cursor: pointer; }
 .menu :slotted(button:hover) { background: var(--bg-selected); color: var(--text-primary); }
-.menu :slotted(button.danger) { color: #b33; }
-.menu :slotted(button.danger:hover) { background: #fdeaea; }
+.menu :slotted(button.danger) { color: var(--danger-ink); }
+.menu :slotted(button.danger:hover) { background: var(--danger-soft); }
 </style>

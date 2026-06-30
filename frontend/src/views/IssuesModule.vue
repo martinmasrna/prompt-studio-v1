@@ -313,46 +313,53 @@ watch([issues, activeIssueEvaluationId], async () => {
 </template>
 
 <style scoped>
-.issues-view { flex: 1; overflow-y: auto; padding: 32px 38px 60px; background: var(--bg); }
+.issues-view { flex: 1; overflow-y: auto; padding: 28px clamp(20px, 3vw, 38px) 60px; background: var(--canvas); }
 header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
-h1 { font-size: 22px; }
+h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
 header p { margin-top: 5px; color: var(--text-muted); font-size: 13px; }
 .filters { display: flex; gap: 4px; margin-bottom: 18px; border-bottom: 1px solid var(--border); }
 .filters button { padding: 7px 12px; border: none; border-bottom: 2px solid transparent; background: none; color: var(--text-muted); cursor: pointer; font: inherit; font-size: 12px; }
-.filters button.active { border-bottom-color: var(--text-primary); color: var(--text-primary); }
+.filters button:hover { color: var(--text-secondary); }
+.filters button.active { border-bottom-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
 .issue-list { display: flex; flex-direction: column; gap: 14px; }
 .issue-actions { display: flex; align-items: center; gap: 7px; flex: none; }
-.status { padding: 2px 7px; border-radius: 3px; font-size: 9px; font-weight: 700; text-transform: uppercase; }
-.status.open { background: #fff2d9; color: #9a5a20; }
-.status.diagnosed { background: #eee7f8; color: #7654a8; }
+.status { padding: 2px 7px; border-radius: 4px; font-size: 9px; font-weight: 700; text-transform: uppercase; }
+.status.open { background: var(--warning-soft); color: var(--warning-ink); }
+.status.diagnosed { background: var(--ai-soft); color: var(--ai-ink); }
 .status.closed { background: var(--bg-selected); color: var(--text-muted); }
-.note { margin: 0 0 16px; padding: 6px 10px; border-left: 3px solid #9a5a20; background: var(--bg-sunken); color: var(--text-secondary); font-size: 12px; line-height: 1.45; cursor: pointer; white-space: pre-wrap; }
+.note { margin: 0 0 16px; padding: 7px 11px; border-left: 3px solid var(--accent); border-radius: 0 var(--r-ctl) var(--r-ctl) 0; background: var(--bg-sunken); color: var(--text-secondary); font-size: 12px; line-height: 1.45; cursor: pointer; white-space: pre-wrap; }
 .note:hover { color: var(--text-primary); }
 .issue-edit { margin: 0 0 16px; }
-.resolution { margin-top: 14px; padding: 11px 12px; border-left: 3px solid #78977b; background: var(--bg-sunken); color: var(--text-secondary); font-size: 12px; }
+.resolution { margin-top: 14px; padding: 11px 12px; border-left: 3px solid var(--success); border-radius: 0 var(--r-ctl) var(--r-ctl) 0; background: var(--bg-sunken); color: var(--text-secondary); font-size: 12px; }
 .resolution strong { display: block; margin-bottom: 5px; color: var(--text-primary); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
 .resolution p { white-space: pre-wrap; line-height: 1.5; }
-.resolution span { display: block; margin-top: 7px; color: #4f7a52; }
+.resolution span { display: block; margin-top: 7px; color: var(--success-ink); }
 .actions { display: flex; justify-content: flex-end; gap: 7px; margin-top: 13px; }
-.btn { padding: 5px 11px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text-muted); font: inherit; font-size: 11px; cursor: pointer; }
-.btn.primary { background: #1a1a1a; color: #fff; }
-.btn.doctor { display: inline-flex; align-items: center; gap: 5px; border-color: transparent; color: var(--text-primary); }
-.btn.doctor:hover:not(:disabled) { background: var(--bg-selected); }
+.btn { padding: 6px 11px; border: 1px solid var(--border); border-radius: var(--r-ctl); background: var(--card); color: var(--text-muted); font: inherit; font-size: 11px; cursor: pointer; }
+.btn:hover { color: var(--text-primary); border-color: var(--border-strong, #aaa); }
+.btn.primary { background: #1a1a1a; color: #fff; border-color: #1a1a1a; }
+/* Prompt Doctor is the AI affordance — the one action that carries the AI hue. */
+.btn.doctor { display: inline-flex; align-items: center; gap: 5px; border-color: transparent; background: var(--ai-soft); color: var(--ai-ink); }
+.btn.doctor:hover:not(:disabled) { background: color-mix(in srgb, var(--ai) 22%, #fff); }
 .doctor-icon { width: 13px; height: 13px; flex: none; }
-.btn.danger:hover { color: #b33; }
+.btn.danger { color: var(--danger-ink); }
+.btn.danger:hover { color: var(--danger-ink); border-color: var(--danger); }
 .btn:disabled { opacity: .5; cursor: default; }
-input, textarea { width: 100%; padding: 9px 10px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg); color: var(--text-primary); font: inherit; }
+input, textarea { width: 100%; padding: 9px 10px; border: 1px solid transparent; border-radius: var(--r-ctl); background: var(--bg-sunken); color: var(--text-primary); font: inherit; }
+input:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
 .title-input { margin-bottom: 9px; font-weight: 600; }
 .empty { color: var(--text-faint); font-size: 13px; }
-.error { color: #c04040; }
+.error { color: var(--danger-ink); }
 .modal-sub { color: var(--text-muted); font-size: 12px; line-height: 1.45; }
 .resolution-modal, .doctor-modal { display: flex; flex-direction: column; gap: 13px; }
 .resolution-modal h2, .doctor-header h2 { font-size: 16px; }
 .resolution-modal label { display: flex; flex-direction: column; gap: 6px; color: var(--text-secondary); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
-.resolution-modal textarea, .resolution-modal select { width: 100%; padding: 9px 10px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg); color: var(--text-primary); font: inherit; font-size: 13px; text-transform: none; letter-spacing: 0; }
+.resolution-modal textarea, .resolution-modal select { width: 100%; padding: 9px 10px; border: 1px solid transparent; border-radius: var(--r-ctl); background: var(--bg-sunken); color: var(--text-primary); font: inherit; font-size: 13px; text-transform: none; letter-spacing: 0; }
+.resolution-modal textarea:focus, .resolution-modal select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
 .resolution-modal textarea { min-height: 180px; resize: vertical; }
 .doctor-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; }
 .doctor-header p { margin-top: 5px; color: var(--text-muted); font-size: 12px; }
-.modal-close { flex: none; width: 28px; height: 28px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text-muted); font-size: 20px; line-height: 20px; cursor: pointer; }
+.modal-close { flex: none; width: 28px; height: 28px; border: 1px solid var(--border); border-radius: var(--r-ctl); background: var(--card); color: var(--text-muted); font-size: 20px; line-height: 20px; cursor: pointer; }
+.modal-close:hover { color: var(--text-primary); border-color: var(--border-strong, #aaa); }
 .doctor-prompt { min-height: 360px; max-height: 62vh; resize: vertical; font-family: var(--font-mono); font-size: 12px; line-height: 1.5; white-space: pre-wrap; }
 </style>

@@ -33,9 +33,8 @@ const savingSharedVersion = ref(false);
 const sharedVersionDraftText = ref('');
 const sharedVersionSavedText = ref('');
 
-// The setup inspector (right rail) collapses to hand its width to the outputs
-// while you read — you set up once, then mostly compare.
-const setupOpen = ref(true);
+// Rail collapsible panels
+const varsRailOpen = ref(true);
 
 // The per-side "inputs" band shows the content of the varied axis (each side's
 // raw prompt template when varying version, each side's params when varying
@@ -59,14 +58,11 @@ const savedComparison = ref<number | null>(null);
 const comparisonError = ref<string | null>(null);
 
 // ── Axis selections ────────────────────────────────────────────────────────────
-// Per-side selectors for the varied axis, plus a shared selector for the held one.
 const aVersionId = ref<number | null>(null);
 const bVersionId = ref<number | null>(null);
 const sharedVersionId = ref<number | null>(null);
 const aConfigId = ref<number | null>(null);
 const bConfigId = ref<number | null>(null);
-// The held config (when varying version) is the live, editable config shared with
-// the Sandbox — its params live in the configs store, not a per-side ref.
 
 function resetRun() {
   outputA.value = null; outputB.value = null;
@@ -76,7 +72,6 @@ function resetRun() {
   savedComparison.value = null; comparisonError.value = null;
 }
 
-// Reset selections and outputs whenever the active prompt changes.
 watch(() => activePromptData.value?.id, () => {
   aVersionId.value = activeVersionId.value;
   bVersionId.value = activeVersionId.value;
@@ -180,8 +175,6 @@ async function deleteSharedVersion(): Promise<void> {
   }
 }
 
-// A config's parameters come from the saved config; "Scratch" (no config) falls
-// back to the live parameter state shared with the sandbox.
 function settingsFor(versionId: number | null, configId: number | null): RunSettings {
   const c = configId === null ? null : configs.value.find(x => x.id === configId);
   const params = c
@@ -190,8 +183,6 @@ function settingsFor(versionId: number | null, configId: number | null): RunSett
   return { system_prompt: systemPromptFor(versionId), ...params };
 }
 
-// The live, editable params — what both sides run with when varying version (and
-// the Scratch fallback). Mirrors what the Sandbox runs with.
 const liveParams = () => ({
   temperature: temperature.value, top_p: topP.value, top_k: topK.value,
   max_tokens: maxTokens.value, enable_thinking: enableThinking.value,
@@ -200,9 +191,6 @@ const liveParams = () => ({
 const aText = computed(() => textFor(versionAId.value));
 const bText = computed(() => textFor(versionBId.value));
 
-// ── Content of each axis (for the inspector's held preview and the inputs band) ──
-// Params resolved the same way runs resolve them, so the preview is truthful: a
-// saved config's values, or the live "Scratch" state when no config is chosen.
 function paramsOf(configId: number | null) {
   const s = settingsFor(null, configId);
   return [
@@ -215,18 +203,15 @@ function paramsOf(configId: number | null) {
 }
 const paramsA = computed(() => paramsOf(aConfigId.value));
 const paramsB = computed(() => paramsOf(bConfigId.value));
-// Keys whose value differs between A and B — highlighted so the changed knobs pop.
 const paramDiff = computed(() => {
   const set = new Set<string>();
   paramsA.value.forEach((p, i) => { if (p.value !== paramsB.value[i].value) set.add(p.key); });
   return set;
 });
 
-// Prompt broken into text + {{variable}} segments, for the inline raw template view.
 const segmentsA = computed(() => tokenizePrompt(aText.value, variableValues.value));
 const segmentsB = computed(() => tokenizePrompt(bText.value, variableValues.value));
 
-// Held (shared) version content, shown once in the inspector when varying config.
 const heldVersionSystem = computed(() => systemPromptFor(sharedVersionId.value));
 const rawVar = (name: string) => `{{${name}}}`;
 
@@ -274,7 +259,7 @@ async function runBoth() {
   const contextB = captureEvaluationContext('ab', versionBId.value, bText.value, renderedPromptB, settingsB);
 
   resetRun();
-  inputsOpenA.value = false; // hand the stage to the outputs once a run starts
+  inputsOpenA.value = false;
   inputsOpenB.value = false;
   runningA.value = true;
   runningB.value = true;
@@ -315,366 +300,723 @@ const renderedA = computed(() =>
 const renderedB = computed(() =>
   outputB.value?.text ? renderContent(outputB.value.text) : ''
 );
-
 </script>
 
 <template>
-  <div class="ab-tester" :class="{ 'setup-collapsed': !setupOpen }">
+  <div class="ab-tester">
 
-    <!-- ── Comparison (the stage) ─────────────────────────── -->
-    <div class="comparison">
+    <!-- ── VERSION A ─────────────────────────────────────────── -->
+    <section class="vcol">
+      <div class="vhead">
+        <span class="abadge">A</span>
+        <span class="axis-lbl">{{ varyAxis === 'version' ? 'Version' : 'Config' }}</span>
+        <select
+          v-if="varyAxis === 'version'"
+          v-model="aVersionId"
+          class="vselect"
+          aria-label="Version A"
+        >
+          <option v-for="v in versions" :key="v.id" :value="v.id">
+            {{ v.name }}{{ v.is_current ? ' ★' : '' }}
+          </option>
+        </select>
+        <select
+          v-else
+          v-model="aConfigId"
+          class="vselect"
+          aria-label="Config A"
+        >
+          <option :value="null">Scratch</option>
+          <option v-for="c in configs" :key="c.id" :value="c.id">{{ c.name }}</option>
+        </select>
+      </div>
 
-      <!-- Side A -->
-      <div class="side">
-        <div class="side-header">
-          <span class="side-badge">A</span>
-          <span class="side-axis">{{ varyAxis === 'version' ? 'Version' : 'Config' }}</span>
-          <select v-if="varyAxis === 'version'" v-model="aVersionId" class="sel-version" aria-label="Version A">
-            <option v-for="v in versions" :key="v.id" :value="v.id">
-              {{ v.name }}{{ v.is_current ? ' ★' : '' }}
-            </option>
-          </select>
-          <select v-else v-model="aConfigId" class="sel-version" aria-label="Config A">
-            <option :value="null">Scratch</option>
-            <option v-for="c in configs" :key="c.id" :value="c.id">{{ c.name }}</option>
-          </select>
+      <div class="prompt-wrap">
+        <button
+          class="prompt-head"
+          :aria-expanded="inputsOpenA"
+          @click="inputsOpenA = !inputsOpenA"
+        >
+          <span class="io-chev">{{ inputsOpenA ? '▾' : '▸' }}</span>
+          <span class="section-lbl">{{ varyAxis === 'version' ? 'Prompt' : 'Params' }}</span>
+        </button>
+        <template v-if="inputsOpenA">
+          <div v-if="varyAxis === 'version'" class="io-prompt">
+            <template v-for="(seg, i) in segmentsA" :key="i">
+              <span v-if="seg.type === 'var'" class="io-var">{{ rawVar(seg.name) }}</span>
+              <template v-else>{{ seg.value }}</template>
+            </template>
+          </div>
+          <div v-else class="io-params">
+            <span
+              v-for="p in paramsA"
+              :key="p.key"
+              class="param"
+              :class="{ diff: paramDiff.has(p.key) }"
+            >{{ p.label }} <b>{{ p.value }}</b></span>
+          </div>
+        </template>
+      </div>
+
+      <div class="out-head">
+        <span
+          class="out-dot"
+          :class="{ active: !!outputA && !errorA, error: !!errorA, pulsing: runningA }"
+        ></span>
+        <span class="out-ttl">Output</span>
+      </div>
+
+      <div class="answer">
+        <div v-if="runningA" class="output-loading">
+          <span class="spinner" /> Running…
         </div>
+        <div v-else-if="errorA" class="run-error">
+          <span class="err-icon">⚠</span>{{ errorA }}
+        </div>
+        <div v-else-if="!outputA" class="output-empty">Run to see output.</div>
+        <div v-else-if="outputA.text" class="output-text markdown-body" v-html="renderedA" />
+        <p v-else class="output-empty">(empty response)</p>
+      </div>
 
-        <!-- Inputs band: the content of the varied axis for this side -->
-        <div class="side-input">
-          <button class="io-head" :aria-expanded="inputsOpenA" @click="inputsOpenA = !inputsOpenA">
-            <span class="io-chev">{{ inputsOpenA ? '▾' : '▸' }}</span>
-            <span class="io-label">{{ varyAxis === 'version' ? 'Prompt' : 'Params' }}</span>
+      <div v-if="outputA" class="stat-bar">
+        <div class="meta-stats">
+          <span v-if="outputA.tokens_used != null" class="meta-chip">{{ outputA.tokens_used }} tokens</span>
+          <span class="meta-chip">{{ outputA.latency_ms }} ms</span>
+        </div>
+        <ResultActions
+          v-if="evaluationA"
+          :evaluation="evaluationA"
+          :saved-id="savedA"
+          :copy-text="outputA.text"
+          @saved="savedA = $event"
+        />
+      </div>
+    </section>
+
+    <!-- ── VERSION B ─────────────────────────────────────────── -->
+    <section class="vcol">
+      <div class="vhead">
+        <span class="abadge">B</span>
+        <span class="axis-lbl">{{ varyAxis === 'version' ? 'Version' : 'Config' }}</span>
+        <select
+          v-if="varyAxis === 'version'"
+          v-model="bVersionId"
+          class="vselect"
+          aria-label="Version B"
+        >
+          <option v-for="v in versions" :key="v.id" :value="v.id">
+            {{ v.name }}{{ v.is_current ? ' ★' : '' }}
+          </option>
+        </select>
+        <select
+          v-else
+          v-model="bConfigId"
+          class="vselect"
+          aria-label="Config B"
+        >
+          <option :value="null">Scratch</option>
+          <option v-for="c in configs" :key="c.id" :value="c.id">{{ c.name }}</option>
+        </select>
+      </div>
+
+      <div class="prompt-wrap">
+        <button
+          class="prompt-head"
+          :aria-expanded="inputsOpenB"
+          @click="inputsOpenB = !inputsOpenB"
+        >
+          <span class="io-chev">{{ inputsOpenB ? '▾' : '▸' }}</span>
+          <span class="section-lbl">{{ varyAxis === 'version' ? 'Prompt' : 'Params' }}</span>
+        </button>
+        <template v-if="inputsOpenB">
+          <div v-if="varyAxis === 'version'" class="io-prompt">
+            <template v-for="(seg, i) in segmentsB" :key="i">
+              <span v-if="seg.type === 'var'" class="io-var">{{ rawVar(seg.name) }}</span>
+              <template v-else>{{ seg.value }}</template>
+            </template>
+          </div>
+          <div v-else class="io-params">
+            <span
+              v-for="p in paramsB"
+              :key="p.key"
+              class="param"
+              :class="{ diff: paramDiff.has(p.key) }"
+            >{{ p.label }} <b>{{ p.value }}</b></span>
+          </div>
+        </template>
+      </div>
+
+      <div class="out-head">
+        <span
+          class="out-dot"
+          :class="{ active: !!outputB && !errorB, error: !!errorB, pulsing: runningB }"
+        ></span>
+        <span class="out-ttl">Output</span>
+      </div>
+
+      <div class="answer">
+        <div v-if="runningB" class="output-loading">
+          <span class="spinner" /> Running…
+        </div>
+        <div v-else-if="errorB" class="run-error">
+          <span class="err-icon">⚠</span>{{ errorB }}
+        </div>
+        <div v-else-if="!outputB" class="output-empty">Run to see output.</div>
+        <div v-else-if="outputB.text" class="output-text markdown-body" v-html="renderedB" />
+        <p v-else class="output-empty">(empty response)</p>
+      </div>
+
+      <div v-if="outputB" class="stat-bar">
+        <div class="meta-stats">
+          <span v-if="outputB.tokens_used != null" class="meta-chip">{{ outputB.tokens_used }} tokens</span>
+          <span class="meta-chip">{{ outputB.latency_ms }} ms</span>
+        </div>
+        <ResultActions
+          v-if="evaluationB"
+          :evaluation="evaluationB"
+          :saved-id="savedB"
+          :copy-text="outputB.text"
+          @saved="savedB = $event"
+        />
+      </div>
+    </section>
+
+    <!-- ── SHARED CONFIG RAIL ─────────────────────────────────── -->
+    <aside class="rail">
+      <div class="rail-scroll">
+
+      <!-- Shared Variables -->
+      <div class="railcard">
+        <div class="panel-head-row">
+          <button
+            class="panel-toggle"
+            :aria-expanded="varsRailOpen"
+            @click="varsRailOpen = !varsRailOpen"
+          >
+            <span class="io-chev">{{ varsRailOpen ? '▾' : '▸' }}</span>
+            <span class="section-lbl">Shared variables</span>
           </button>
-          <template v-if="inputsOpenA">
-            <div v-if="varyAxis === 'version'" class="io-prompt"><template v-for="(seg, i) in segmentsA" :key="i"><span v-if="seg.type === 'var'" class="io-var">{{ rawVar(seg.name) }}</span><template v-else>{{ seg.value }}</template></template></div>
-            <div v-else class="params io-params">
-              <span v-for="p in paramsA" :key="p.key" class="param" :class="{ diff: paramDiff.has(p.key) }">{{ p.label }} <b>{{ p.value }}</b></span>
-            </div>
-          </template>
+          <TestCaseControls />
         </div>
-
-        <div class="side-output">
-          <div v-if="runningA" class="output-loading">
-            <span class="spinner" /> Running…
-          </div>
-          <div v-else-if="errorA" class="run-error">
-            <span class="err-icon">⚠</span>{{ errorA }}
-          </div>
-          <div v-else-if="!outputA" class="output-empty">Run to see output.</div>
-          <div v-else-if="outputA.text" class="output-text markdown-body" v-html="renderedA" />
-          <p v-else class="output-empty">(empty response)</p>
-        </div>
-
-        <div v-if="outputA" class="side-footer">
-          <div class="meta-stats">
-            <span v-if="outputA.tokens_used != null" class="meta-chip">{{ outputA.tokens_used }} tokens</span>
-            <span class="meta-chip">{{ outputA.latency_ms }} ms</span>
-          </div>
-          <ResultActions
-            v-if="evaluationA"
-            :evaluation="evaluationA"
-            :saved-id="savedA"
-            :copy-text="outputA.text"
-            @saved="savedA = $event"
-          />
+        <div v-if="varsRailOpen" class="panel-body">
+          <VariablesPanel v-if="detectedVars.length" :detected-vars="detectedVars" hide-label />
+          <p v-else class="panel-empty">Neither side uses variables yet.</p>
         </div>
       </div>
 
-      <div class="col-divider" />
-
-      <!-- Side B -->
-      <div class="side">
-        <div class="side-header">
-          <span class="side-badge">B</span>
-          <span class="side-axis">{{ varyAxis === 'version' ? 'Version' : 'Config' }}</span>
-          <select v-if="varyAxis === 'version'" v-model="bVersionId" class="sel-version" aria-label="Version B">
-            <option v-for="v in versions" :key="v.id" :value="v.id">
-              {{ v.name }}{{ v.is_current ? ' ★' : '' }}
-            </option>
-          </select>
-          <select v-else v-model="bConfigId" class="sel-version" aria-label="Config B">
-            <option :value="null">Scratch</option>
-            <option v-for="c in configs" :key="c.id" :value="c.id">{{ c.name }}</option>
-          </select>
-        </div>
-
-        <!-- Inputs band: the content of the varied axis for this side -->
-        <div class="side-input">
-          <button class="io-head" :aria-expanded="inputsOpenB" @click="inputsOpenB = !inputsOpenB">
-            <span class="io-chev">{{ inputsOpenB ? '▾' : '▸' }}</span>
-            <span class="io-label">{{ varyAxis === 'version' ? 'Prompt' : 'Params' }}</span>
-          </button>
-          <template v-if="inputsOpenB">
-            <div v-if="varyAxis === 'version'" class="io-prompt"><template v-for="(seg, i) in segmentsB" :key="i"><span v-if="seg.type === 'var'" class="io-var">{{ rawVar(seg.name) }}</span><template v-else>{{ seg.value }}</template></template></div>
-            <div v-else class="params io-params">
-              <span v-for="p in paramsB" :key="p.key" class="param" :class="{ diff: paramDiff.has(p.key) }">{{ p.label }} <b>{{ p.value }}</b></span>
-            </div>
-          </template>
-        </div>
-
-        <div class="side-output">
-          <div v-if="runningB" class="output-loading">
-            <span class="spinner" /> Running…
-          </div>
-          <div v-else-if="errorB" class="run-error">
-            <span class="err-icon">⚠</span>{{ errorB }}
-          </div>
-          <div v-else-if="!outputB" class="output-empty">Run to see output.</div>
-          <div v-else-if="outputB.text" class="output-text markdown-body" v-html="renderedB" />
-          <p v-else class="output-empty">(empty response)</p>
-        </div>
-
-        <div v-if="outputB" class="side-footer">
-          <div class="meta-stats">
-            <span v-if="outputB.tokens_used != null" class="meta-chip">{{ outputB.tokens_used }} tokens</span>
-            <span class="meta-chip">{{ outputB.latency_ms }} ms</span>
-          </div>
-          <ResultActions
-            v-if="evaluationB"
-            :evaluation="evaluationB"
-            :saved-id="savedB"
-            :copy-text="outputB.text"
-            @saved="savedB = $event"
-          />
-        </div>
-      </div>
-
-    </div>
-
-    <!-- ── Setup inspector (right rail) ───────────────────── -->
-    <aside class="setup" :class="{ collapsed: !setupOpen }">
-      <button
-        v-if="!setupOpen"
-        class="setup-toggle"
-        title="Expand setup"
-        :aria-expanded="setupOpen"
-        @click="setupOpen = true"
-      >‹</button>
-
-      <template v-if="setupOpen">
-        <div class="setup-scroll">
-          <div class="setup-title-row">
+      <!-- What are we testing? + Shared Config -->
+      <div class="railcard">
+        <div class="seg-zone">
+          <span class="section-lbl seg-question">What are we A/B testing?</span>
+          <div class="seg" role="tablist" aria-label="A/B test axis">
             <button
-              class="setup-toggle"
-              title="Collapse setup"
-              :aria-expanded="setupOpen"
-              @click="setupOpen = false"
-            >›</button>
-            <h2 class="setup-section-title">Shared configuration</h2>
+              :class="{ active: varyAxis === 'version' }"
+              role="tab"
+              :aria-selected="varyAxis === 'version'"
+              @click="varyAxis = 'version'"
+            >Prompt version</button>
+            <button
+              :class="{ active: varyAxis === 'config' }"
+              role="tab"
+              :aria-selected="varyAxis === 'config'"
+              @click="varyAxis = 'config'"
+            >Config</button>
           </div>
+        </div>
 
-          <!-- Scenario + its variables -->
-          <section class="panel-box">
-            <header class="box-header">
-              <h3 class="box-title">Shared variables</h3>
-              <TestCaseControls />
-            </header>
-            <div class="box-body">
-              <VariablesPanel v-if="detectedVars.length" :detected-vars="detectedVars" hide-label />
-              <p v-else class="box-empty">Neither side uses variables yet.</p>
-            </div>
-          </section>
-
-          <!-- Held (shared) axis — shown once, applied to both sides -->
-          <section class="panel-box">
-            <header class="box-header">
-              <p class="setup-question">What are we A/B testing?</p>
-              <div class="vary-toggle title-toggle" role="tablist" aria-label="A/B test mode">
-                <button :class="{ active: varyAxis === 'version' }" role="tab" :aria-selected="varyAxis === 'version'" @click="varyAxis = 'version'">Prompt version</button>
-                <button :class="{ active: varyAxis === 'config' }" role="tab" :aria-selected="varyAxis === 'config'" @click="varyAxis = 'config'">Config</button>
-              </div>
-              <p class="shared-axis-label">{{ varyAxis === 'version' ? 'Shared config' : 'Shared prompt version' }}</p>
-              <ConfigControls v-if="varyAxis === 'version'" />
-              <div v-else class="entity-controls compact-control version-compact-control">
-                <div class="entity-picker-wrap entity-picker-combo" :class="{ open: sharedVersionOpen || sharedVersionMenuOpen }">
-                  <button
-                    class="entity-picker compact-picker"
-                    type="button"
-                    aria-haspopup="menu"
-                    :aria-expanded="sharedVersionOpen"
-                    @click="sharedVersionOpen = !sharedVersionOpen; sharedVersionMenuOpen = false"
-                  >
-                    <span class="entity-picker-label">{{ sharedVersionLabel }}</span>
-                  </button>
-                  <div class="entity-menu-wrap" @keydown.esc="sharedVersionMenuOpen = false">
-                    <button
-                      class="entity-kebab"
-                      type="button"
-                      aria-label="Version actions"
-                      aria-haspopup="menu"
-                      :aria-expanded="sharedVersionMenuOpen"
-                      :disabled="!sharedVersion"
-                      @click="sharedVersionMenuOpen = !sharedVersionMenuOpen; sharedVersionOpen = false"
-                    >
-                      <span>&#8943;</span>
-                    </button>
-                    <template v-if="sharedVersionMenuOpen">
-                      <div class="entity-backdrop" @click="sharedVersionMenuOpen = false" />
-                      <div class="entity-menu" role="menu">
-                        <button role="menuitem" @click="renameSharedVersion">Rename</button>
-                        <button role="menuitem" @click="editSharedVersionDescription">Edit description</button>
-                        <button
-                          role="menuitem"
-                          class="danger"
-                          :disabled="versions.length <= 1"
-                          :title="versions.length <= 1 ? 'A prompt must keep at least one version' : 'Delete version'"
-                          @click="deleteSharedVersion"
-                        >Delete</button>
-                      </div>
-                    </template>
-                  </div>
-                  <button
-                    class="entity-picker-arrow"
-                    type="button"
-                    aria-label="Open version picker"
-                    :aria-expanded="sharedVersionOpen"
-                    @click="sharedVersionOpen = !sharedVersionOpen; sharedVersionMenuOpen = false"
-                  >
-                    <span class="entity-picker-chevron">{{ sharedVersionOpen ? '^' : 'v' }}</span>
-                  </button>
-                  <div v-if="sharedVersionOpen" class="entity-backdrop" @click="sharedVersionOpen = false" />
-                  <div v-if="sharedVersionOpen" class="entity-popover compact-popover" role="menu">
-                    <button
-                      v-for="v in versions"
-                      :key="v.id"
-                      class="entity-row"
-                      :class="{ current: sharedVersionId === v.id }"
-                      role="menuitem"
-                      @click="chooseSharedVersion(v.id)"
-                    >
-                      <span class="entity-row-main">
-                        <span class="entity-row-title">{{ v.name }}{{ v.is_current ? ' ★' : '' }}</span>
-                        <span v-if="v.note" class="entity-row-note">{{ v.note }}</span>
-                      </span>
-                    </button>
-                  </div>
-                </div>
-                <span v-if="isSharedVersionDirty" class="entity-dirty-dot" title="Unsaved changes" />
+        <div class="panel-head no-click">
+          <div class="panel-head-left">
+            <span class="section-lbl">{{ varyAxis === 'version' ? 'Shared config' : 'Shared version' }}</span>
+          </div>
+          <ConfigControls v-if="varyAxis === 'version'" />
+          <div v-else class="entity-controls compact-control version-compact-control">
+            <div class="entity-picker-wrap entity-picker-combo" :class="{ open: sharedVersionOpen || sharedVersionMenuOpen }">
+              <button
+                class="entity-picker compact-picker"
+                type="button"
+                aria-haspopup="menu"
+                :aria-expanded="sharedVersionOpen"
+                @click="sharedVersionOpen = !sharedVersionOpen; sharedVersionMenuOpen = false"
+              >
+                <span class="entity-picker-label">{{ sharedVersionLabel }}</span>
+              </button>
+              <div class="entity-menu-wrap" @keydown.esc="sharedVersionMenuOpen = false">
                 <button
-                  v-if="isSharedVersionDirty || savingSharedVersion"
-                  class="entity-save"
-                  :disabled="savingSharedVersion || !isSharedVersionDirty"
-                  @click="saveSharedVersion"
+                  class="entity-kebab"
+                  type="button"
+                  aria-label="Version actions"
+                  aria-haspopup="menu"
+                  :aria-expanded="sharedVersionMenuOpen"
+                  :disabled="!sharedVersion"
+                  @click="sharedVersionMenuOpen = !sharedVersionMenuOpen; sharedVersionOpen = false"
                 >
-                  {{ savingSharedVersion ? 'Saving...' : 'Save' }}
+                  <span>&#8943;</span>
+                </button>
+                <template v-if="sharedVersionMenuOpen">
+                  <div class="entity-backdrop" @click="sharedVersionMenuOpen = false" />
+                  <div class="entity-menu" role="menu">
+                    <button role="menuitem" @click="renameSharedVersion">Rename</button>
+                    <button role="menuitem" @click="editSharedVersionDescription">Edit description</button>
+                    <button
+                      role="menuitem"
+                      class="danger"
+                      :disabled="versions.length <= 1"
+                      :title="versions.length <= 1 ? 'A prompt must keep at least one version' : 'Delete version'"
+                      @click="deleteSharedVersion"
+                    >Delete</button>
+                  </div>
+                </template>
+              </div>
+              <button
+                class="entity-picker-arrow"
+                type="button"
+                aria-label="Open version picker"
+                :aria-expanded="sharedVersionOpen"
+                @click="sharedVersionOpen = !sharedVersionOpen; sharedVersionMenuOpen = false"
+              >
+                <span class="entity-picker-chevron">{{ sharedVersionOpen ? '^' : 'v' }}</span>
+              </button>
+              <div v-if="sharedVersionOpen" class="entity-backdrop" @click="sharedVersionOpen = false" />
+              <div v-if="sharedVersionOpen" class="entity-popover compact-popover" role="menu">
+                <button
+                  v-for="v in versions"
+                  :key="v.id"
+                  class="entity-row"
+                  :class="{ current: sharedVersionId === v.id }"
+                  role="menuitem"
+                  @click="chooseSharedVersion(v.id)"
+                >
+                  <span class="entity-row-main">
+                    <span class="entity-row-title">{{ v.name }}{{ v.is_current ? ' ★' : '' }}</span>
+                    <span v-if="v.note" class="entity-row-note">{{ v.note }}</span>
+                  </span>
                 </button>
               </div>
-            </header>
-            <div class="box-body">
-              <template v-if="varyAxis === 'version'">
-                <ParameterControls full-width-toggle />
-              </template>
-              <template v-else>
-                <div v-if="heldVersionSystem" class="held-system">System: {{ heldVersionSystem }}</div>
-                <div class="held-prompt-editor">
-                  <PromptEditor v-model="sharedVersionDraftText" @save="saveSharedVersion" />
-                </div>
-              </template>
             </div>
-          </section>
+            <span v-if="isSharedVersionDirty" class="entity-dirty-dot" title="Unsaved changes" />
+            <button
+              v-if="isSharedVersionDirty || savingSharedVersion"
+              class="entity-save"
+              :disabled="savingSharedVersion || !isSharedVersionDirty"
+              @click="saveSharedVersion"
+            >
+              {{ savingSharedVersion ? 'Saving...' : 'Save' }}
+            </button>
+          </div>
         </div>
 
-        <div class="setup-foot">
-          <span v-if="comparisonError" class="comparison-error">{{ comparisonError }}</span>
-          <button
-            v-if="evaluationA && evaluationB"
-            class="save-comparison-btn"
-            :disabled="savedComparison !== null"
-            @click="saveComparison"
-          >{{ savedComparison ? 'Comparison saved' : 'Save comparison' }}</button>
-          <button class="run-btn" :class="{ running: isRunning }" :disabled="isRunning" @click="runBoth">
-            {{ isRunning ? 'Running…' : 'Run A/B test' }}
-          </button>
+        <div class="panel-body">
+          <template v-if="varyAxis === 'version'">
+            <ParameterControls full-width-toggle />
+          </template>
+          <template v-else>
+            <div v-if="heldVersionSystem" class="held-system">System: {{ heldVersionSystem }}</div>
+            <div class="held-prompt-editor">
+              <PromptEditor v-model="sharedVersionDraftText" @save="saveSharedVersion" />
+            </div>
+          </template>
         </div>
-      </template>
+      </div>
+
+      </div><!-- /rail-scroll -->
+
+      <!-- Run actions -->
+      <div class="rail-foot">
+        <span v-if="comparisonError" class="comparison-error">{{ comparisonError }}</span>
+        <button
+          v-if="evaluationA && evaluationB"
+          class="save-comparison-btn"
+          :disabled="savedComparison !== null"
+          @click="saveComparison"
+        >{{ savedComparison ? 'Comparison saved' : 'Save comparison' }}</button>
+        <button
+          class="run-btn"
+          :class="{ running: isRunning }"
+          :disabled="isRunning"
+          @click="runBoth"
+        >{{ isRunning ? 'Running…' : 'Run A/B test ▸' }}</button>
+      </div>
+
     </aside>
 
   </div>
 </template>
 
 <style scoped>
-/* ── Container ── */
-/* A row: the comparison takes the stage, the setup inspector sits on the right. */
+/* ── Layout ─────────────────────────────────────────────────────────────────── */
 .ab-tester {
-  display: flex;
-  flex-direction: row;
   flex: 1;
-  overflow: hidden;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr 380px;
+  gap: 16px;
+  padding: 16px;
+  background: var(--canvas);
   height: 100%;
-  background: var(--bg);
+  overflow: hidden;
 }
 
-.vary-toggle { display: inline-flex; gap: 2px; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; width: 100%; padding: 2px; background: var(--bg); }
-.vary-toggle button {
-  flex: 1;
-  padding: 6px 8px;
-  background: var(--bg);
-  border: none;
-  color: var(--text-secondary);
-  font: inherit;
-  font-size: 11.5px;
-  cursor: pointer;
-  border-radius: 4px;
-  white-space: nowrap;
+/* ── Version cards ──────────────────────────────────────────────────────────── */
+.vcol {
+  background: var(--card);
+  border-radius: var(--r);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
 }
-.vary-toggle button + button { border-left: 1px solid transparent; }
-.vary-toggle button:hover { color: var(--text-primary); background: var(--bg-hover); }
-.vary-toggle button.active {
-  background: var(--bg-selected);
-  color: var(--text-primary);
-  box-shadow: inset 0 0 0 1px #d8d8d8;
-  font-weight: 600;
+
+/* Card header: badge + axis label + version/config select */
+.vhead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
 }
-.vary-toggle.title-toggle {
-  width: 100%;
+
+.abadge {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 700;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-family: var(--font-sans);
 }
-.vary-toggle.title-toggle button {
-  min-height: 30px;
-  padding: 5px 10px;
+
+.axis-lbl {
   font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
-}
-
-/* ── Titled cards (shared visual language with the Sandbox/Overview panels) ── */
-.panel-box {
-  display: flex;
-  flex-direction: column;
+  color: var(--text-muted);
   flex-shrink: 0;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg);
-}
-.box-header {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 8px;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--border);
-  border-radius: 7px 7px 0 0;
-  background: var(--bg-sunken);
-}
-.box-title { flex-shrink: 0; margin: 0; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-secondary); }
-.setup-question,
-.shared-axis-label {
-  margin: 0;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-.setup-question { color: var(--text-secondary); }
-.shared-axis-label {
-  margin-top: 2px;
-  color: var(--text-faint);
 }
 
-/* In the narrow inspector, keep the card's title + compound picker
-   on one row and let Save wrap below; cap the popover so it can't overflow left
-   under the comparison panel. (Overview is unaffected — these are scoped overrides.) */
+.vselect {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg-sunken);
+  border: 1px solid transparent;
+  border-radius: var(--r-ctl);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 6px 10px;
+  cursor: pointer;
+  appearance: auto;
+}
+.vselect:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+/* Collapsible prompt/params section */
+.prompt-wrap {
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.prompt-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font: inherit;
+  width: 100%;
+  text-align: left;
+}
+.prompt-head:hover .section-lbl,
+.prompt-head:hover .io-chev { color: var(--text-secondary); }
+.prompt-head:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--accent-soft); }
+
+.io-chev {
+  color: var(--text-faint);
+  font-size: 10px;
+  width: 10px;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.section-lbl {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.io-prompt {
+  margin: 0 16px 14px;
+  background: var(--bg-sunken);
+  border-radius: var(--r-inner);
+  padding: 11px 13px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.75;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 190px;
+  overflow: auto;
+}
+
+.io-var {
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+  font-weight: 650;
+  border-radius: 4px;
+  padding: 0 3px;
+}
+
+.io-params {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 0 16px 14px;
+}
+
+.param {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--bg-sunken);
+  border-radius: 4px;
+  padding: 2px 7px;
+}
+.param b { color: var(--text-primary); font-weight: 600; }
+.param.diff { background: var(--accent-soft); color: var(--accent-ink); }
+.param.diff b { color: var(--accent-ink); }
+
+/* Output section */
+.out-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.out-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--bg-selected);
+  flex-shrink: 0;
+  transition: background 0.2s;
+}
+.out-dot.active { background: var(--success); }
+.out-dot.error { background: var(--danger); }
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+.out-dot.pulsing {
+  background: var(--accent);
+  animation: pulse-dot 1s ease-in-out infinite;
+}
+
+.out-ttl {
+  font-weight: 650;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.answer {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px;
+  font-family: var(--font-read);
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.output-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-faint);
+  font-size: 13px;
+}
+
+.output-empty {
+  color: var(--text-faint);
+  font-size: 13px;
+  margin: 0;
+}
+
+.run-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px 14px;
+  background: var(--danger-soft);
+  border: 1px solid color-mix(in srgb, var(--danger) 30%, #fff);
+  border-radius: var(--r-ctl);
+  color: var(--danger-ink);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.err-icon { flex-shrink: 0; }
+
+.output-text { font-size: 13.5px; }
+
+.stat-bar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 16px;
+  border-top: 1px solid var(--border);
+}
+
+.meta-stats { display: flex; align-items: center; gap: 10px; }
+
+.meta-chip {
+  font-size: 11px;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+}
+
+/* ── Shared config rail ──────────────────────────────────────────────────────── */
+.rail {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  gap: 12px;
+}
+
+/* Scrollable railcard zone — the run button lives outside so it stays pinned */
+.rail-scroll {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+}
+
+.railcard {
+  background: var(--card);
+  border-radius: var(--r);
+  box-shadow: var(--shadow);
+  flex-shrink: 0;
+}
+
+/* Vars railcard header row: collapse toggle on the left, scenario picker on the right */
+.panel-head-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px 16px;
+}
+
+.panel-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  flex-shrink: 0;
+}
+.panel-toggle:hover .section-lbl,
+.panel-toggle:hover .io-chev { color: var(--text-secondary); }
+.panel-toggle:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-soft); border-radius: 4px; }
+
+/* Config railcard section label row (not a toggle — just a display row) */
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px 16px;
+}
+.panel-head.no-click { padding-top: 0; }
+
+.panel-head-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.panel-body {
+  padding: 0 16px 14px;
+}
+
+.panel-empty {
+  margin: 0;
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+/* Segmented toggle for "What are we testing?" */
+.seg-zone {
+  padding: 14px 16px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.seg-question {
+  display: block;
+}
+
+.seg {
+  display: flex;
+  background: var(--bg-sunken);
+  border-radius: var(--r-ctl);
+  padding: 3px;
+  gap: 3px;
+  margin-bottom: 14px;
+}
+
+.seg button {
+  flex: 1;
+  background: none;
+  border: none;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 650;
+  color: var(--text-muted);
+  padding: 7px;
+  border-radius: 6px;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  transition: background 0.12s, color 0.12s;
+}
+.seg button:hover { color: var(--text-secondary); }
+.seg button.active {
+  background: var(--card);
+  box-shadow: var(--shadow-sm);
+  color: var(--accent-ink);
+}
+.seg button:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-soft); }
+
+/* Compact-rail version picker overrides */
 :deep(.compact-control) {
   flex: 1 1 auto;
   width: 100%;
@@ -693,269 +1035,67 @@ const renderedB = computed(() =>
 }
 :deep(.compact-control .entity-save) { order: 1; }
 :deep(.compact-popover) { width: 100%; }
-.box-body { padding: 12px; }
-.box-empty { margin: 0; color: var(--text-faint); font-size: 12px; }
 
-/* ── Setup inspector (right rail) ── */
-.setup {
-  flex-shrink: 0;
-  width: 300px;
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  border-left: 1px solid var(--border);
-  background: var(--bg);
-  transition: width 0.16s ease;
-}
-.setup.collapsed { width: 44px; }
-.setup:not(.collapsed) { width: 380px; }
-
-.setup-toggle {
-  width: 26px;
-  height: 26px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 5px;
+/* Held (shared) version content */
+.held-system {
+  font-size: 11px;
   color: var(--text-muted);
-  font-size: 15px;
-  line-height: 1;
-  cursor: pointer;
-  flex: 0 0 auto;
-}
-.setup.collapsed > .setup-toggle {
-  position: absolute;
-  top: 10px;
-  left: 9px;
-  z-index: 2;
-}
-.setup-toggle:hover { color: var(--text-primary); border-color: #aaa; }
-
-.setup-scroll {
-  flex: 1;
-  overflow-y: auto;
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-.setup-title-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 30px;
-}
-.setup-section-title {
-  margin: 0;
-  display: flex;
-  align-items: center;
-  font-size: 12px;
-  font-weight: 650;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-secondary);
-}
-
-.setup-foot {
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 12px 16px;
-  border-top: 1px solid var(--border);
-}
-.save-comparison-btn { padding: 8px 14px; background: var(--bg); border: 1px solid var(--border); border-radius: 5px; color: var(--text-secondary); font: inherit; font-size: 12px; cursor: pointer; }
-.save-comparison-btn:hover:not(:disabled) { border-color: #aaa; color: var(--text-primary); }
-.save-comparison-btn:disabled { opacity: .55; cursor: default; }
-.comparison-error { color: #c04040; font-size: 11px; }
-
-.run-btn {
-  padding: 9px 24px;
-  background: #1a1a1a;
-  border: none;
-  border-radius: 5px;
-  color: #fff;
-  font-size: 13px;
-  font-family: inherit;
-  font-weight: 600;
-  cursor: pointer;
-  letter-spacing: 0.04em;
-  transition: background 0.12s, opacity 0.12s;
-}
-.run-btn:hover:not(:disabled) { background: #333; }
-.run-btn:disabled, .run-btn.running { opacity: 0.5; cursor: not-allowed; }
-
-/* ── Comparison ── */
-.comparison { flex: 1; min-width: 0; display: flex; overflow: hidden; }
-
-.side { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
-
-.col-divider { width: 1px; background: var(--border); flex-shrink: 0; }
-
-/* ── Side header: announces what each side IS (axis + value) ── */
-.side-header {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 10px 20px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-sunken);
-  flex-shrink: 0;
-}
-
-.side-badge {
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  color: #fff;
-  background: #1a1a1a;
-  border-radius: 4px;
-  padding: 3px 9px;
-  flex-shrink: 0;
-}
-
-.side-axis {
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-faint);
-  flex-shrink: 0;
-}
-
-.sel-version {
-  min-width: 0;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--text-primary);
-  font-size: 13px;
-  font-weight: 600;
-  font-family: var(--font-mono);
-  padding: 4px 8px;
-  cursor: pointer;
-}
-.sel-version:focus { outline: none; border-color: #aaa; }
-
-/* ── Inputs band: content of the varied axis, per side ── */
-.side-input {
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 6px 20px 12px;
-  border-bottom: 1px solid var(--border);
-  background: #fcfcfd;
-}
-/* The band header is the toggle: chevron + label, always visible so a collapsed
-   band can be reopened. */
-.io-head {
-  align-self: flex-start;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 4px 0;
-  background: none;
-  border: none;
-  cursor: pointer;
-  font: inherit;
-}
-.io-chev { width: 10px; color: var(--text-faint); font-size: 10px; line-height: 1; }
-.io-label { font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); }
-.io-head:hover .io-label, .io-head:hover .io-chev { color: var(--text-secondary); }
-
-.io-prompt {
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  line-height: 1.6;
-  color: var(--text-secondary);
-  white-space: pre-wrap;
-  word-break: break-word;
-  max-height: 200px;
+  line-height: 1.5;
+  max-height: 80px;
   overflow: auto;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 9px 11px;
+  margin-bottom: 6px;
 }
-.io-var { background: #fff2c2; border-radius: 2px; padding: 0 1px; }
-
-.params { display: flex; flex-wrap: wrap; gap: 5px; }
-.params.io-params { padding-top: 2px; }
-.param { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); background: var(--bg-selected); border-radius: 4px; padding: 2px 7px; }
-.param b { color: var(--text-primary); font-weight: 600; }
-.param.diff { background: #efeaff; color: #5a3fd6; box-shadow: inset 0 0 0 1px #d9cdff; }
-.param.diff b { color: #4a2fc6; }
-
-/* ── Held (shared) axis content, shown once in the inspector card body ── */
-.held-system { font-size: 11px; color: var(--text-muted); line-height: 1.5; max-height: 80px; overflow: auto; margin-bottom: 6px; }
 .held-prompt-editor {
   display: flex;
   min-height: 180px;
   max-height: 300px;
 }
-.held-prompt {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  line-height: 1.55;
-  color: var(--text-secondary);
-  white-space: pre-wrap;
-  word-break: break-word;
-  max-height: 120px;
-  overflow: auto;
-}
 
-/* ── Side output ── */
-.side-output { flex: 1; overflow-y: auto; padding: 20px 24px; }
-
-.output-loading {
+/* Rail footer: comparison save + Run, pinned below the scrollable railcards */
+.rail-foot {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 8px;
-  color: var(--text-faint);
-  font-size: 13px;
-  padding: 8px 0;
-}
-.output-empty { color: var(--text-faint); font-size: 13px; padding: 8px 0; }
-
-.run-error {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 12px 14px;
-  background: #fff5f5;
-  border: 1px solid #fdd;
-  border-radius: 5px;
-  color: #c04040;
-  font-size: 13px;
-  line-height: 1.5;
-}
-.err-icon { flex-shrink: 0; }
-
-/* Container only; element styling comes from the global .markdown-body class. */
-.output-text {
-  font-size: 13.5px;
-}
-
-/* Metrics are diagnostic footnotes, not the headline — pinned to the column
-   foot, muted, out of the scrolling output. */
-.side-footer {
   flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 7px 20px;
-  border-top: 1px solid var(--border);
 }
-.meta-stats { display: flex; align-items: center; gap: 10px; }
-.meta-chip {
-  font-size: 11px;
-  color: var(--text-faint);
-  font-family: var(--font-mono);
+
+.comparison-error { color: var(--danger-ink); font-size: 11px; }
+
+.save-comparison-btn {
+  padding: 9px 14px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--r-ctl);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
 }
+.save-comparison-btn:hover:not(:disabled) { border-color: var(--border-strong, #aaa); color: var(--text-primary); }
+.save-comparison-btn:disabled { opacity: 0.55; cursor: default; box-shadow: none; }
+
+.run-btn {
+  width: 100%;
+  padding: 13px;
+  background: var(--accent);
+  border: none;
+  border-radius: 12px;
+  color: #fff;
+  font-size: 14px;
+  font-family: inherit;
+  font-weight: 650;
+  cursor: pointer;
+  box-shadow: 0 2px 9px color-mix(in srgb, var(--accent) 38%, transparent);
+  transition: background 0.12s, opacity 0.12s;
+}
+.run-btn:hover:not(:disabled) { background: var(--accent-ink); }
+.run-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-soft), 0 2px 9px color-mix(in srgb, var(--accent) 38%, transparent);
+}
+.run-btn:disabled,
+.run-btn.running { opacity: 0.6; cursor: not-allowed; }
 
 /* Spinner */
 @keyframes ab-spin { to { transform: rotate(360deg); } }
@@ -963,11 +1103,50 @@ const renderedB = computed(() =>
   display: inline-block;
   width: 13px;
   height: 13px;
-  border: 2px solid var(--border);
-  border-top-color: var(--text-secondary);
+  border: 2px solid var(--bg-selected);
+  border-top-color: var(--accent);
   border-radius: 50%;
   animation: ab-spin 0.7s linear infinite;
   vertical-align: middle;
   flex-shrink: 0;
+}
+
+/* ── Responsive ──────────────────────────────────────────────────────────────── */
+/* Below ~1300px the three-column grid crowds; collapse the rail into a bottom
+   drawer and stack A/B vertically on narrow viewports. */
+@media (max-width: 1300px) {
+  .ab-tester {
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr auto;
+  }
+  .rail {
+    grid-column: 1 / -1;
+    flex-direction: row;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 12px;
+    overflow-x: auto;
+    overflow-y: visible;
+  }
+  .rail-scroll {
+    flex: 1 1 auto;
+    flex-direction: row;
+    flex-wrap: wrap;
+    overflow: visible;
+    min-height: 0;
+    max-height: 260px;
+  }
+  .railcard { flex: 1 1 260px; }
+  .rail-foot { flex: 0 0 auto; flex-direction: column; align-self: flex-end; min-width: 200px; }
+  .run-btn { width: 100%; }
+}
+
+@media (max-width: 760px) {
+  .ab-tester {
+    grid-template-columns: 1fr;
+    overflow-y: auto;
+  }
+  .vcol { min-height: 420px; }
+  .rail { max-height: none; }
 }
 </style>
